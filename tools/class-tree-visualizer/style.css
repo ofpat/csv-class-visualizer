@@ -160,11 +160,13 @@ input:focus { outline: none; border-color: var(--accent); }
 .edges.has-selection .edge { opacity: .12; }
 .edge.hl { stroke: var(--edge-hi); stroke-width: 2.5; opacity: 1 !important; }
 
-/* Subtree-Fokus: Klick auf eine Klasse blendet alles aus, was nicht
-   diese Klasse oder eine ihrer Nachkommen-Klassen ist. */
-.canvas.subtree-mode .card.subtree-hidden { display: none; }
-.edges.subtree-mode  .edge.subtree-hidden { display: none; }
-.canvas.subtree-mode .card.focus { box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
+/* Linien-Fokus: Klick auf eine Klasse zeigt nur deren Vorfahren + Nachkommen
+   (kompakt neu angeordnet). Ein-/Ausblenden geschieht per Re-Layout in JS;
+   hier nur die Hervorhebung der fokussierten Karte. */
+.canvas.subtree-mode .card.focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent), var(--shadow);
+}
 
 /* ---------- Overlay ---------- */
 .overlay {

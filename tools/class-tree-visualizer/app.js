@@ -225,25 +225,37 @@ function layoutAndRender(tree) {
   }
   for (const node of nodes) node.h = node.el.offsetHeight;
 
-  const tiers = [];
-  for (const node of nodes) (tiers[node.tier] = tiers[node.tier] || []).push(node);
+  relayout(tree, nodes);
+}
+
+/* Ordnet eine Teilmenge der Knoten kompakt an (pro Tier nur die sichtbaren,
+   eng gepackt, leere Tiers werden übersprungen) und zeichnet nur die Kanten
+   zwischen sichtbaren Knoten. Nicht sichtbare Karten werden ausgeblendet. */
+function relayout(tree, visibleNodes) {
+  const vis = new Set(visibleNodes.map(n => n.key));
+  for (const n of tree.nodes) {
+    n.el.style.display = vis.has(n.key) ? "" : "none";
+    n._edges = [];
+  }
+
+  const tiers = {};
+  for (const n of visibleNodes) (tiers[n.tier] = tiers[n.tier] || []).push(n);
+  const tierKeys = Object.keys(tiers).map(Number).sort((a, b) => a - b);
 
   let maxTierWidth = 0;
-  const tierWidths = tiers.map(group => {
-    if (!group) return 0;
-    const w = group.length * CARD_WIDTH + (group.length - 1) * H_GAP;
-    maxTierWidth = Math.max(maxTierWidth, w);
-    return w;
-  });
+  for (const t of tierKeys) {
+    const g = tiers[t];
+    maxTierWidth = Math.max(maxTierWidth, g.length * CARD_WIDTH + (g.length - 1) * H_GAP);
+  }
 
   let y = PADDING;
-  for (let t = 0; t < tiers.length; t++) {
-    const group = tiers[t];
-    if (!group) continue;
-    group.sort((a, b) => a.name.localeCompare(b.name, "de"));
-    let x = PADDING + (maxTierWidth - tierWidths[t]) / 2;
+  for (const t of tierKeys) {                 // nur belegte Tiers -> auch vertikal kompakt
+    const g = tiers[t];
+    g.sort((a, b) => a.name.localeCompare(b.name, "de"));
+    const tierW = g.length * CARD_WIDTH + (g.length - 1) * H_GAP;
+    let x = PADDING + (maxTierWidth - tierW) / 2;
     let maxH = 0;
-    for (const node of group) {
+    for (const node of g) {
       node.x = x; node.y = y;
       node.el.style.left = x + "px";
       node.el.style.top = y + "px";
@@ -254,7 +266,7 @@ function layoutAndRender(tree) {
   }
 
   const totalWidth = maxTierWidth + PADDING * 2;
-  const totalHeight = y - V_GAP + PADDING;
+  const totalHeight = (tierKeys.length ? y - V_GAP : 0) + PADDING;
   el.edges.setAttribute("width", totalWidth);
   el.edges.setAttribute("height", totalHeight);
   el.edges.style.width = totalWidth + "px";
@@ -262,9 +274,11 @@ function layoutAndRender(tree) {
   el.canvas.style.width = totalWidth + "px";
   el.canvas.style.height = totalHeight + "px";
 
+  el.edges.innerHTML = "";
   tree._edgeList = [];
-  for (const node of nodes) {
+  for (const node of visibleNodes) {
     for (const parent of node.prereqs) {
+      if (!vis.has(parent.key)) continue;     // nur Kanten zwischen sichtbaren Knoten
       const path = drawEdge(parent, node);
       node._edges.push(path);
       parent._edges.push(path);
@@ -344,40 +358,35 @@ function clearHighlight() {
   el.edges.querySelectorAll(".edge").forEach(p => p.classList.remove("hl"));
 }
 
-/* Subtree-Fokus: blendet alles aus außer der Klasse und ihrer gesamten
-   Nachkommenschaft (Kinder, Enkel … über alle Tiers). */
-function descendantSet(node) {
+/* Linie einer Klasse: die Klasse selbst + ALLE Vorfahren (nach oben bis zu den
+   Wurzeln) + ALLE Nachkommen (nach unten über alle Tiers). */
+function lineageSet(node) {
   const set = new Set();
-  (function dfs(n) {
-    if (set.has(n.key)) return;       // schützt vor evtl. Zyklen
-    set.add(n.key);
-    n.children.forEach(dfs);
-  })(node);
+  const down = (n) => { if (set.has(n.key)) return; set.add(n.key); n.children.forEach(down); };
+  down(node);
+  const up = (n) => { for (const p of n.prereqs) if (!set.has(p.key)) { set.add(p.key); up(p); } };
+  up(node);
   return set;
 }
+/* Fokus: nur die Linie der Klasse zeigen und kompakt neu anordnen. */
 function focusSubtree(node) {
   const tree = getActiveTree();
   tree.focusKey = node.key;
-  const set = descendantSet(node);
   clearHighlight();
+  const set = lineageSet(node);
+  const visible = tree.nodes.filter(n => set.has(n.key));
+  relayout(tree, visible);
   el.canvas.classList.add("subtree-mode");
-  el.edges.classList.add("subtree-mode");
-  for (const n of tree.nodes) {
-    n.el.classList.toggle("subtree-hidden", !set.has(n.key));
-    n.el.classList.toggle("focus", n.key === node.key);
-  }
-  for (const e of (tree._edgeList || [])) {
-    // Kante nur zeigen, wenn beide Endpunkte sichtbar sind
-    e.path.classList.toggle("subtree-hidden", !(set.has(e.from) && set.has(e.to)));
-  }
+  for (const n of tree.nodes) n.el.classList.toggle("focus", n.key === node.key);
+  resetView();   // an die kompakte Ansicht anpassen
 }
 function clearFocus() {
   const tree = getActiveTree();
-  if (tree) tree.focusKey = null;
+  if (!tree) return;
+  tree.focusKey = null;
   el.canvas.classList.remove("subtree-mode");
-  el.edges.classList.remove("subtree-mode");
-  el.nodes.querySelectorAll(".card").forEach(c => c.classList.remove("subtree-hidden", "focus", "hl"));
-  el.edges.querySelectorAll(".edge").forEach(p => p.classList.remove("subtree-hidden", "hl"));
+  el.nodes.querySelectorAll(".card").forEach(c => c.classList.remove("focus", "hl"));
+  if (tree.nodes.length) { relayout(tree, tree.nodes); resetView(); }
 }
 
 /* ============================================================
