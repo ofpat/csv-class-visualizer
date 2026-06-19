@@ -44,7 +44,7 @@ const state = {
 
 /* tree-Objekt (Laufzeit):
    { name, source:'sheet'|'local', gids:[], csvText, nodes:[], byKey:{},
-     warnings:[], error, loading, view:{scale,tx,ty,initialized}, selectedKey } */
+     warnings:[], error, loading, view:{scale,tx,ty,initialized}, focusKey } */
 
 /* ---------- DOM-Referenzen ---------- */
 const el = {
@@ -262,11 +262,13 @@ function layoutAndRender(tree) {
   el.canvas.style.width = totalWidth + "px";
   el.canvas.style.height = totalHeight + "px";
 
+  tree._edgeList = [];
   for (const node of nodes) {
     for (const parent of node.prereqs) {
       const path = drawEdge(parent, node);
       node._edges.push(path);
       parent._edges.push(path);
+      tree._edgeList.push({ path, from: parent.key, to: node.key });
     }
   }
 }
@@ -294,13 +296,13 @@ function createCard(node) {
     rows.push(`<div class="card-row" style="color:#e6938a"><span class="lbl">⚠ fehlende Voraussetzung:</span> ${esc(node.missingPrereqs.join(", "))}</div>`);
 
   card.innerHTML = rows.join("");
-  card.addEventListener("mouseenter", () => { if (!getActiveTree().selectedKey) highlight(node); });
-  card.addEventListener("mouseleave", () => { if (!getActiveTree().selectedKey) clearHighlight(); });
+  card.addEventListener("mouseenter", () => { if (!getActiveTree().focusKey) highlight(node); });
+  card.addEventListener("mouseleave", () => { if (!getActiveTree().focusKey) clearHighlight(); });
   card.addEventListener("click", (e) => {
     e.stopPropagation();
     const tree = getActiveTree();
-    if (tree.selectedKey === node.key) { tree.selectedKey = null; clearHighlight(); }
-    else { tree.selectedKey = node.key; highlight(node); }
+    if (tree.focusKey === node.key) clearFocus();   // erneuter Klick -> alles zeigen
+    else focusSubtree(node);                          // Klasse + alle Nachkommen isolieren
   });
   return card;
 }
@@ -340,6 +342,42 @@ function clearHighlight() {
   el.edges.classList.remove("has-selection");
   el.nodes.querySelectorAll(".card").forEach(c => c.classList.remove("hl", "focus"));
   el.edges.querySelectorAll(".edge").forEach(p => p.classList.remove("hl"));
+}
+
+/* Subtree-Fokus: blendet alles aus außer der Klasse und ihrer gesamten
+   Nachkommenschaft (Kinder, Enkel … über alle Tiers). */
+function descendantSet(node) {
+  const set = new Set();
+  (function dfs(n) {
+    if (set.has(n.key)) return;       // schützt vor evtl. Zyklen
+    set.add(n.key);
+    n.children.forEach(dfs);
+  })(node);
+  return set;
+}
+function focusSubtree(node) {
+  const tree = getActiveTree();
+  tree.focusKey = node.key;
+  const set = descendantSet(node);
+  clearHighlight();
+  el.canvas.classList.add("subtree-mode");
+  el.edges.classList.add("subtree-mode");
+  for (const n of tree.nodes) {
+    n.el.classList.toggle("subtree-hidden", !set.has(n.key));
+    n.el.classList.toggle("focus", n.key === node.key);
+  }
+  for (const e of (tree._edgeList || [])) {
+    // Kante nur zeigen, wenn beide Endpunkte sichtbar sind
+    e.path.classList.toggle("subtree-hidden", !(set.has(e.from) && set.has(e.to)));
+  }
+}
+function clearFocus() {
+  const tree = getActiveTree();
+  if (tree) tree.focusKey = null;
+  el.canvas.classList.remove("subtree-mode");
+  el.edges.classList.remove("subtree-mode");
+  el.nodes.querySelectorAll(".card").forEach(c => c.classList.remove("subtree-hidden", "focus", "hl"));
+  el.edges.querySelectorAll(".edge").forEach(p => p.classList.remove("subtree-hidden", "hl"));
 }
 
 /* ============================================================
@@ -388,7 +426,7 @@ function initPanZoom() {
   el.viewport.addEventListener("click", (e) => {
     if (e.target.closest(".card")) return;
     const tree = getActiveTree();
-    if (tree && tree.selectedKey) { tree.selectedKey = null; clearHighlight(); }
+    if (tree && tree.focusKey) clearFocus();   // Klick ins Leere -> Fokus aufheben
   });
   el.viewport.addEventListener("wheel", (e) => {
     e.preventDefault();
@@ -443,7 +481,7 @@ async function loadTreeFromSheet(tree) {
 
     const { nodes, byKey, warnings } = buildTreeFromParts(parts);
     tree.nodes = nodes; tree.byKey = byKey; tree.warnings = warnings;
-    tree.error = null; tree.selectedKey = null; tree.view.initialized = false;
+    tree.error = null; tree.focusKey = null; tree.view.initialized = false;
     if (warnings.length) console.warn(`[${tree.name}]\n` + warnings.join("\n"));
   } catch (err) {
     setTreeError(tree, err);
@@ -457,7 +495,7 @@ async function loadTreeFromSheet(tree) {
 function applyParsed(tree) {
   const { nodes, byKey, warnings } = buildTree(tree.csvText);
   tree.nodes = nodes; tree.byKey = byKey; tree.warnings = warnings;
-  tree.error = null; tree.selectedKey = null; tree.view.initialized = false;
+  tree.error = null; tree.focusKey = null; tree.view.initialized = false;
 }
 function setTreeError(tree, err) {
   tree.error = err.message || String(err);
@@ -501,7 +539,7 @@ function newTree(name) {
     csvText: "", nodes: [], byKey: {}, warnings: [],
     error: null, loading: false,
     view: { scale: 1, tx: 0, ty: 0, initialized: false },
-    selectedKey: null,
+    focusKey: null,
   };
 }
 function getActiveTree() { return state.activeName ? state.trees[state.activeName] : null; }
@@ -562,6 +600,11 @@ function renderActive() {
   hideOverlay();
   layoutAndRender(tree);
   if (!tree.view.initialized) resetView(); else applyView();
+  // Subtree-Fokus nach Neu-Rendern wiederherstellen (Karten sind neu erzeugt)
+  if (tree.focusKey) {
+    const fn = tree.byKey[tree.focusKey];
+    if (fn) focusSubtree(fn); else tree.focusKey = null;
+  }
 }
 
 /* ============================================================
@@ -638,10 +681,10 @@ function runSearch(query) {
   if (!query) return;
   const hit = tree.nodes.find(n => n.name.toLowerCase().includes(query));
   if (!hit) return;
+  if (tree.focusKey) clearFocus();   // ggf. Subtree-Fokus aufheben, damit der Treffer sichtbar ist
   hit.el.classList.add("search-hit");
   centerOnNode(hit);
   highlight(hit);
-  tree.selectedKey = hit.key;
 }
 function centerOnNode(node) {
   const v = getActiveTree().view;
