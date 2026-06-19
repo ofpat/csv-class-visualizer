@@ -35,11 +35,16 @@ const DEFAULT_SETTINGS = {
   ],
 };
 
+/* GIDs der Skill-Tabs (für Hover-Beschreibung + Verlinkung in die Skill-Liste).
+   Reine Tab-Nummern, ohne Token wertlos -> dürfen im Code stehen. */
+const SKILL_GIDS = { Aktiv: "1539405646", Passiv: "1121351090" };
+
 /* ---------- globaler Zustand ---------- */
 const state = {
   settings: { sheetRef: "", trees: [] },  // trees: [{name, gids:[...]}]
   trees: {},          // name -> tree-Objekt (Laufzeit)
   activeName: null,
+  skills: {},         // key(name) -> {name, desc, type}
 };
 
 /* tree-Objekt (Laufzeit):
@@ -303,13 +308,20 @@ function createCard(node) {
   if (node.armor.length)
     rows.push(`<div class="card-row"><span class="lbl">Rüstung:</span> ${esc(node.armor.join(", "))}</div>`);
   if (node.passive)
-    rows.push(`<div class="card-row passive"><span class="lbl">Passiv:</span> ${esc(node.passive)}</div>`);
+    rows.push(`<div class="card-row passive"><span class="lbl">Passiv:</span> ${abilityHtml(node.passive)}</div>`);
   if (node.active)
-    rows.push(`<div class="card-row active"><span class="lbl">Aktiv:</span> ${esc(node.active)}</div>`);
+    rows.push(`<div class="card-row active"><span class="lbl">Aktiv:</span> ${abilityHtml(node.active)}</div>`);
   if (node.missingPrereqs.length)
     rows.push(`<div class="card-row" style="color:#e6938a"><span class="lbl">⚠ fehlende Voraussetzung:</span> ${esc(node.missingPrereqs.join(", "))}</div>`);
 
   card.innerHTML = rows.join("");
+  // Skill-Links verdrahten: Klick öffnet die Skill-Liste, Hover zeigt die Beschreibung
+  card.querySelectorAll(".skill-link").forEach(a => {
+    a.addEventListener("click", (e) => e.stopPropagation()); // nicht den Subtree-Fokus auslösen
+    a.addEventListener("mouseenter", (e) => showTip(a.dataset.desc, e));
+    a.addEventListener("mousemove", moveTip);
+    a.addEventListener("mouseleave", hideTip);
+  });
   card.addEventListener("mouseenter", () => { if (!getActiveTree().focusKey) highlight(node); });
   card.addEventListener("mouseleave", () => { if (!getActiveTree().focusKey) clearHighlight(); });
   card.addEventListener("click", (e) => {
@@ -333,6 +345,82 @@ function drawEdge(parent, child) {
 }
 
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/* ============================================================
+   Fähigkeiten <-> Skills verlinken
+   ============================================================ */
+// Findet den passenden Skill zu einem Fähigkeits-Text (z.B.
+// "Beistand (Heilt …)" -> Skill "Beistand").
+function matchSkill(text) {
+  if (!text) return null;
+  const t = text.trim().toLowerCase();
+  if (state.skills[t]) return state.skills[t];
+  for (const key in state.skills) if (t.startsWith(key)) return state.skills[key];
+  for (const key in state.skills) if (t.includes(key)) return state.skills[key];
+  return null;
+}
+// HTML für einen Fähigkeits-Eintrag: als Link, wenn ein Skill bekannt ist.
+function abilityHtml(text) {
+  const sk = matchSkill(text);
+  if (!sk) return esc(text);
+  const url = `../skill-list/index.html#skill=${encodeURIComponent(sk.name)}`;
+  return `<a class="skill-link" href="${url}" target="_blank" rel="noopener" ` +
+         `data-desc="${escAttr(sk.desc || "(keine Beschreibung)")}">${esc(text)}</a>`;
+}
+
+/* Tooltip (Beschreibung bei Hover über einen Skill-Link) */
+let _tipEl = null;
+function ensureTip() {
+  if (!_tipEl) {
+    _tipEl = document.createElement("div");
+    _tipEl.className = "skill-tooltip hidden";
+    document.body.appendChild(_tipEl);
+  }
+  return _tipEl;
+}
+function showTip(text, e) { const t = ensureTip(); t.textContent = text; t.classList.remove("hidden"); moveTip(e); }
+function moveTip(e) {
+  const t = ensureTip();
+  const pad = 14, w = t.offsetWidth, h = t.offsetHeight;
+  let x = e.clientX + pad, y = e.clientY + pad;
+  if (x + w > window.innerWidth)  x = e.clientX - w - pad;
+  if (y + h > window.innerHeight) y = e.clientY - h - pad;
+  t.style.left = x + "px"; t.style.top = y + "px";
+}
+function hideTip() { if (_tipEl) _tipEl.classList.add("hidden"); }
+
+/* Skills aus dem Sheet laden (für Hover-Beschreibung + Links). */
+async function loadSkills() {
+  state.skills = {};
+  if (!state.settings.sheetRef) return;
+  try {
+    for (const type of Object.keys(SKILL_GIDS)) {
+      const resp = await fetch(buildCsvUrl(state.settings.sheetRef, SKILL_GIDS[type]), { redirect: "follow" });
+      if (!resp.ok) continue;
+      const text = await resp.text();
+      if (/^\s*<(!doctype|html)/i.test(text)) continue;
+      for (const s of parseSkillRows(text, type)) state.skills[s.name.toLowerCase()] = s;
+    }
+  } catch (e) {
+    console.warn("Skills konnten nicht geladen werden (Links/Tooltips deaktiviert):", e);
+  }
+}
+function parseSkillRows(csvText, type) {
+  const rows = parseCSV(csvText);
+  if (!rows.length) return [];
+  let h = rows.findIndex(r => r.some(c => c.trim().toLowerCase() === "name"));
+  if (h === -1) h = 0;
+  const lower = rows[h].map(x => x.trim().toLowerCase());
+  const ni = lower.findIndex(x => x.includes("name"));
+  const di = lower.findIndex(x => x.includes("beschreib"));
+  const out = [];
+  for (let r = h + 1; r < rows.length; r++) {
+    const name = (rows[r][ni] || "").trim();
+    if (!name) continue;
+    out.push({ name, desc: (di >= 0 ? rows[r][di] : "").trim(), type });
+  }
+  return out;
+}
 
 /* ============================================================
    Highlighting
@@ -668,7 +756,7 @@ function showUrlPrompt() {
     state.settings.sheetRef = v;
     persistSettings();
     const t = getActiveTree();
-    if (t && t.source === "sheet") loadTreeFromSheet(t); else renderActive();
+    if (t && t.source === "sheet") loadSkills().then(() => loadTreeFromSheet(t)); else renderActive();
   };
   load.addEventListener("click", submit);
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
@@ -746,7 +834,7 @@ function saveSettings() {
   renderTabs();
   closeSettings();
   const tree = getActiveTree();
-  if (tree && tree.source === "sheet") loadTreeFromSheet(tree); else renderActive();
+  if (tree && tree.source === "sheet") loadSkills().then(() => loadTreeFromSheet(tree)); else renderActive();
 }
 function persistSettings() {
   try { localStorage.setItem(LS_KEY, JSON.stringify(state.settings)); }
@@ -926,13 +1014,15 @@ function init() {
     const tree = getActiveTree();
     if (!tree) return;
     if (tree.source === "local") { if (tree.csvText) loadCsvIntoTree(tree, tree.csvText, tree.localFileName); }
-    else loadTreeFromSheet(tree);
+    else loadSkills().then(() => loadTreeFromSheet(tree));
   });
   document.getElementById("reloadAllBtn").addEventListener("click", () => {
-    for (const name in state.trees) {
-      const t = state.trees[name];
-      if (t.source === "sheet") loadTreeFromSheet(t);
-    }
+    loadSkills().then(() => {
+      for (const name in state.trees) {
+        const t = state.trees[name];
+        if (t.source === "sheet") loadTreeFromSheet(t);
+      }
+    });
   });
 
   document.getElementById("zoomInBtn").addEventListener("click", () => setZoom(getActiveTree().view.scale * 1.2));
@@ -952,7 +1042,7 @@ function init() {
   });
 
   const tree = getActiveTree();
-  if (tree && tree.source === "sheet" && state.settings.sheetRef) loadTreeFromSheet(tree);
+  if (tree && tree.source === "sheet" && state.settings.sheetRef) loadSkills().then(() => loadTreeFromSheet(tree));
   else renderActive();
 }
 document.addEventListener("DOMContentLoaded", init);

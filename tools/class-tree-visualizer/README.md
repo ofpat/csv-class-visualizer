@@ -31,6 +31,12 @@ niemals ins Google Sheet, es liest nur.
   Voraussetzungen/Waffen: `,` **oder** `/`.
 - **Mehrere Bäume** parallel über eine Tab-Leiste; jeder Baum behält eigenen
   Zoom/Pan-Zustand und wird unabhängig neu geladen.
+- **Subtree-Fokus**: Klick auf eine Klasse zeigt nur deren Linie (alle Vorfahren
+  **und** alle Nachkommen) und ordnet sie kompakt neu an. Erneuter Klick / Klick
+  ins Leere hebt den Fokus auf.
+- **Verlinkte Fähigkeiten**: Aktiv-/Passiv-Einträge, die einem Skill aus den
+  Tabs *Aktive/Passive Skills* entsprechen, sind verlinkt – **Hover** zeigt die
+  Beschreibung, **Klick** öffnet die [Skill-Liste](../skill-list/) beim Skill.
 - **Mischklassen** (von mehreren Pfaden erreichbar) farblich markiert.
 - **Interaktion**: Hover hebt Eltern + Kinder hervor, Klick pinnt die Auswahl,
   Zoom (Mausrad / +/-) und Pan (Drag auf leerer Fläche), Suchfeld.

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Skill-Liste</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>🎯 Skill-Liste</h1>
+    <input id="searchInput" type="search" placeholder="Suchen (Name / Beschreibung)…" autocomplete="off" />
+    <div class="filters" id="filters">
+      <button class="filter active" data-type="all">Alle</button>
+      <button class="filter" data-type="Aktiv">Aktiv</button>
+      <button class="filter" data-type="Passiv">Passiv</button>
+    </div>
+    <span class="count" id="count"></span>
+    <div class="spacer"></div>
+    <button id="reloadBtn" class="btn" title="Neu laden">↻ Neu laden</button>
+    <a class="btn" href="../class-tree-visualizer/index.html" title="Zum Klassenbaum">⚔️ Klassenbaum</a>
+    <button id="settingsBtn" class="btn icon-btn" title="Sheet-Link ändern">⚙</button>
+  </header>
+
+  <main id="list" class="list"></main>
+
+  <div id="overlay" class="overlay hidden">
+    <div class="overlay-box">
+      <div id="spinner" class="spinner hidden"></div>
+      <div id="overlayMsg" class="overlay-msg"></div>
+      <div id="overlayActions" class="overlay-actions"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
