@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Klassenbaum-Visualizer</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <h1>⚔️ Klassenbaum-Visualizer</h1>
+    </div>
+    <div class="topbar-center">
+      <div id="treeTabs" class="tree-tabs"></div>
+    </div>
+    <div class="topbar-right">
+      <input id="searchInput" type="search" placeholder="Klasse suchen…" autocomplete="off" />
+      <button id="reloadBtn" class="btn" title="Aktuellen Baum neu laden">↻ Neu laden</button>
+      <button id="reloadAllBtn" class="btn" title="Alle Bäume neu laden">↻↻ Alle</button>
+      <div class="export-group">
+        <button id="exportPngBtn" class="btn" title="Sichtbaren Baum als PNG exportieren">PNG</button>
+        <button id="exportSvgBtn" class="btn" title="Sichtbaren Baum als SVG exportieren">SVG</button>
+      </div>
+      <button id="settingsBtn" class="btn icon-btn" title="Einstellungen">⚙</button>
+    </div>
+  </header>
+
+  <main class="stage">
+    <div id="viewport" class="viewport">
+      <div id="canvas" class="canvas">
+        <svg id="edges" class="edges"></svg>
+        <div id="nodes" class="nodes"></div>
+      </div>
+    </div>
+
+    <!-- Overlay: Lade-/Fehler-/Leerzustand -->
+    <div id="overlay" class="overlay hidden">
+      <div class="overlay-box">
+        <div id="overlaySpinner" class="spinner hidden"></div>
+        <div id="overlayMsg" class="overlay-msg"></div>
+        <div id="overlayActions" class="overlay-actions"></div>
+      </div>
+    </div>
+
+    <!-- Zoom-Steuerung -->
+    <div class="zoom-controls">
+      <button id="zoomInBtn" class="btn icon-btn" title="Vergrößern">+</button>
+      <button id="zoomResetBtn" class="btn icon-btn" title="Ansicht zurücksetzen">⤢</button>
+      <button id="zoomOutBtn" class="btn icon-btn" title="Verkleinern">−</button>
+    </div>
+
+    <div class="legend">
+      <span class="legend-item"><span class="swatch swatch-root"></span>Tier 0 / Wurzel</span>
+      <span class="legend-item"><span class="swatch swatch-normal"></span>Klasse</span>
+      <span class="legend-item"><span class="swatch swatch-mixed"></span>Mischklasse (mehrere Pfade)</span>
+    </div>
+  </main>
+
+  <!-- Settings-Panel -->
+  <div id="settingsPanel" class="settings-panel hidden">
+    <div class="settings-inner">
+      <div class="settings-header">
+        <h2>⚙ Einstellungen</h2>
+        <button id="settingsCloseBtn" class="btn icon-btn">✕</button>
+      </div>
+
+      <label class="field">
+        <span>Sheet-URL oder ID</span>
+        <input id="sheetRefInput" type="text" placeholder="https://docs.google.com/…/d/e/…/pub?output=csv  oder  Spreadsheet-ID" />
+        <small>Akzeptiert die <strong>„Im Web veröffentlichen“</strong>-URL (<code>…/d/e/…/pub</code>) oder eine normale Spreadsheet-ID (<code>…/d/&lt;ID&gt;/edit</code>).</small>
+      </label>
+
+      <div class="field">
+        <span>Bäume</span>
+        <small>Je ein Baum mit beliebig vielen <strong>Tab-GIDs (kommagetrennt)</strong>, die zu einem Baum zusammengeführt werden. Die GID ist der Wert <code>gid=…</code> in der Sheet-URL des jeweiligen Tabs.</small>
+        <div id="treeList" class="char-list"></div>
+        <button id="addTreeBtn" class="btn">+ Baum hinzufügen</button>
+      </div>
+
+      <div class="settings-footer">
+        <button id="saveSettingsBtn" class="btn btn-primary">Speichern & Laden</button>
+        <button id="loadLocalBtn" class="btn">Lokale CSV laden…</button>
+        <input id="fileInput" type="file" accept=".csv,text/csv" hidden />
+      </div>
+      <p class="hint">
+        Hinweis: Das Sheet muss über <strong>Datei → Freigeben → Im Web veröffentlichen</strong>
+        freigegeben sein, damit der Live-Abruf funktioniert.
+      </p>
+    </div>
+  </div>
+
+  <!-- Drop-Hinweis für Drag &amp; Drop -->
+  <div id="dropHint" class="drop-hint hidden">CSV-Datei hier ablegen, um sie als Baum zu laden</div>
+
+  <script src="app.js"></script>
+</body>
+</html>

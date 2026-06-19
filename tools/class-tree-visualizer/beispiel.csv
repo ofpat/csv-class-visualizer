@@ -1,0 +1,12 @@
+Klasse,Voraussetzung,Waffe,Rüstung,Passive Fähigkeiten,Aktive Fähigkeiten
+Zivilist,,Faust,Keine Rüstung,,
+Rekrut,,Speer,Leichte Rüstung,,
+Verstossener,,Improvisiert,Keine Rüstung,,
+Söldner,"Zivilist, Rekrut",Schwert,Leichte Rüstung,,
+Dieb,"Zivilist, Verstossener",Dolch,Leichte Rüstung,,
+Jäger,Zivilist,Bogen,Leichte Rüstung,,
+Knappe,Rekrut,"Schwert, Speer",Mittlere Rüstung,"+1 Ang/Def für nahe Berittene","Beistand (Heilt Gift/Blind, wenig HP)"
+Tinker,Rekrut,Armbrust,Mittlere Rüstung,"Erhöhter Maschinenschaden",Setzt Fallen
+Bauer,Zivilist,Sense,Keine Rüstung,"+20% mehr HP",Verzweifelter Angriff
+Aussätziger,Verstossener,Kettensichel,Leichte Rüstung,Status-Immunität,Pestilenz
+Grabräuber,Verstossener,"Hammer, Dolch",Leichte Rüstung,"Steht auf gefallenen Gegnern wie auf Waldfeld","Kann gefallene Gegner extra plündern"
