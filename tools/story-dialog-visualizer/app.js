@@ -23,6 +23,20 @@
 
   const LS_KEY = "sdv-settings-v1";
 
+  /* Default-GIDs der Story-Sheet-Tabs (Komfort-Vorbelegung, wie beim Klassen-Tool).
+     Reine Tab-Nummern — ohne den Sheet-Token wertlos, dürfen daher im Code stehen.
+     Die Sheet-URL/ID wird NICHT hartcodiert (nur localStorage), damit die Adresse
+     nicht ins Repo kommt. */
+  const DEFAULT_GIDS = {
+    characters:    "2077677492",
+    timelines:     "140359793",
+    lines:         "1040180612",
+    choices:       "224318331",
+    combat_events: "975175058",
+    chapters_meta: "1012100174",
+    chapters:      "1592522402",
+  };
+
   const TYPE_ICON = { dialog: "💬", battle: "⚔️", branch: "🔀", end: "🏁" };
 
   /* ---------- Zustand ---------- */
@@ -74,10 +88,15 @@
   /* ============================================================
      Daten laden (Quelle austauschbar)
      ============================================================ */
+  // GIDs aus den Settings, fehlende durch die Defaults aufgefüllt.
+  function effectiveGids() { return Object.assign({}, DEFAULT_GIDS, state.settings.gids || {}); }
+
   function activeSource() {
     const s = state.settings;
-    if (s.sheetRef && s.gids && TAB_ORDER.every(t => s.gids[t]))
-      return GoogleSheetSource(s.sheetRef, s.gids);
+    const gids = effectiveGids();
+    // Sobald eine Sheet-URL/ID gesetzt ist und alle Tabs eine GID haben -> live.
+    if (s.sheetRef && TAB_ORDER.every(t => gids[t]))
+      return GoogleSheetSource(s.sheetRef, gids);
     return LocalFixtureSource();
   }
 
@@ -591,13 +610,14 @@
   function openSettings() {
     el.sheetRefInput.value = state.settings.sheetRef || "";
     el.gidList.innerHTML = "";
+    const gids = effectiveGids();   // Defaults vorbelegen
     for (const tab of TAB_ORDER) {
       const row = document.createElement("div");
       row.className = "gid-row";
       row.innerHTML = `<span class="gid-tab">${esc(tab)}</span>`;
       const inp = document.createElement("input");
       inp.type = "text"; inp.placeholder = "gid"; inp.dataset.tab = tab;
-      inp.value = (state.settings.gids && state.settings.gids[tab]) || "";
+      inp.value = gids[tab] || "";
       row.appendChild(inp);
       el.gidList.appendChild(row);
     }
