@@ -337,7 +337,7 @@ function createCard(node) {
     a.addEventListener("mousemove", moveTip);
     a.addEventListener("mouseleave", hideTip);
   });
-  card.addEventListener("mouseenter", () => { const t = getActiveTree(); if (!t.focusKey && !filterActive(t)) highlight(node); });
+  card.addEventListener("mouseenter", () => { const t = getActiveTree(); if (!t.focusKey && !filterActive(t)) highlightLineage(node); });
   card.addEventListener("mouseleave", () => { const t = getActiveTree(); if (!t.focusKey && !filterActive(t)) clearHighlight(); });
   card.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -440,19 +440,30 @@ function parseSkillRows(csvText, type) {
 /* ============================================================
    Highlighting
    ============================================================ */
-function highlight(node) {
+/* Markiert eine Knotenmenge (keys) + alle Kanten ZWISCHEN diesen Knoten.
+   `focusNode` bekommt zusätzlich .focus. Gemeinsame Render-Basis für Hover,
+   Klick-Pfad und Suche. */
+function applyHighlight(keys, focusNode) {
   const tree = getActiveTree();
   el.canvas.classList.add("has-selection");
   el.edges.classList.add("has-selection");
+  for (const n of tree.nodes) {
+    n.el.classList.toggle("hl", keys.has(n.key));
+    n.el.classList.toggle("focus", !!focusNode && n.key === focusNode.key);
+  }
+  for (const e of (tree._edgeList || []))
+    e.path.classList.toggle("hl", keys.has(e.from) && keys.has(e.to));
+}
+// Direkte Nachbarn (genutzt von der Suche): Knoten + direkte Eltern/Kinder.
+function highlight(node) {
   const related = new Set([node.key]);
   node.prereqs.forEach(p => related.add(p.key));
   node.children.forEach(c => related.add(c.key));
-  for (const n of tree.nodes) {
-    n.el.classList.toggle("hl", related.has(n.key));
-    n.el.classList.toggle("focus", n.key === node.key);
-  }
-  el.edges.querySelectorAll(".edge").forEach(p => p.classList.remove("hl"));
-  (node._edges || []).forEach(p => p.classList.add("hl"));
+  applyHighlight(related, node);
+}
+// Kompletter Pfad (genutzt vom Hover): identische Traversal-Logik wie onClick.
+function highlightLineage(node) {
+  applyHighlight(lineageSet(node), node);
 }
 function clearHighlight() {
   el.canvas.classList.remove("has-selection");
@@ -476,9 +487,6 @@ function focusSubtree(node) {
   const tree = getActiveTree();
   tree.focusKey = node.key;
   clearHighlight();
-  // Filter-Dimmen während des Fokus visuell aussetzen (Auswahl bleibt erhalten).
-  el.canvas.classList.remove("has-filter");
-  el.edges.classList.remove("has-filter");
   const set = lineageSet(node);
   const visible = tree.nodes.filter(n => set.has(n.key));
   relayout(tree, visible);
@@ -492,15 +500,20 @@ function clearFocus() {
   tree.focusKey = null;
   el.canvas.classList.remove("subtree-mode");
   el.nodes.querySelectorAll(".card").forEach(c => c.classList.remove("focus", "hl"));
-  if (tree.nodes.length) { relayout(tree, tree.nodes); applyFilter(tree); resetView(); }
+  if (!tree.nodes.length) return;
+  if (filterActive(tree)) showFilterGrid(tree);   // zurück ins Filter-Raster
+  else { relayout(tree, tree.nodes); resetView(); }
 }
 
 /* ============================================================
    Filter-Sidebar: gruppiert Klassen nach Waffen-/Rüstungstypen.
    Die Kategorien werden aus den vorhandenen Node-Daten abgeleitet
    (node.weapons / node.armor) – es werden keine Typen erfunden.
-   Mehrfachauswahl (OR); Treffer inkl. ihrer Tier-Pfade (Vorfahren)
-   bleiben sichtbar, der Rest wird abgeblendet.
+   Mehrfachauswahl (OR). Ist ein Filter aktiv, zeigt die Bühne nur die
+   passenden Klassen in einem schlichten Raster (ohne Kanten). Ein Klick
+   auf eine Karte öffnet wie gewohnt deren Übersicht (focusSubtree:
+   kompletter Pfad nach oben + alle Nachkommen); Klick ins Leere führt
+   zurück zum Raster.
    ============================================================ */
 function filterActive(tree) {
   return !!(tree && tree.activeFilters && tree.activeFilters.size);
@@ -513,41 +526,73 @@ function collectCategories(tree, field) {
   return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0], "de"));
 }
 
-/* Direkt passende Knoten + alle ihre Vorfahren (Tier-Pfad bis zur Wurzel). */
-function matchingNodeKeys(tree) {
+/* Direkt passende Knoten (führen mind. eine gewählte Waffe/Rüstung). */
+function filterGridNodes(tree) {
   const sel = tree.activeFilters;
-  if (!sel || !sel.size) return null;
-  const direct = new Set();
-  for (const n of tree.nodes) {
-    const hit = n.weapons.some(w => sel.has("w:" + w)) || n.armor.some(a => sel.has("a:" + a));
-    if (hit) direct.add(n.key);
-  }
-  const all = new Set();
-  const up = (n) => { if (!n || all.has(n.key)) return; all.add(n.key); n.prereqs.forEach(up); };
-  direct.forEach(k => up(tree.byKey[k]));
-  return { direct, all };
+  return tree.nodes.filter(n =>
+    n.weapons.some(w => sel.has("w:" + w)) || n.armor.some(a => sel.has("a:" + a)));
 }
 
-/* Filter-Hervorhebung auf die (frisch gerenderten) Karten/Kanten anwenden. */
-function applyFilter(tree) {
+/* Schlichtes Raster der übergebenen Knoten – ohne Kanten/Verknüpfungen.
+   Spaltenzahl näherungsweise quadratisch (max. MAX_PER_ROW). */
+function layoutGrid(tree, gridNodes) {
+  const vis = new Set(gridNodes.map(n => n.key));
+  for (const n of tree.nodes) { n.el.style.display = vis.has(n.key) ? "" : "none"; n._edges = []; }
+  el.edges.innerHTML = "";
+  tree._edgeList = [];
+
+  const items = gridNodes.slice()
+    .sort((a, b) => a.tier - b.tier || a.name.localeCompare(b.name, "de"));
+  const cols = Math.max(1, Math.min(MAX_PER_ROW, Math.ceil(Math.sqrt(items.length))));
+  const rowWidth = (count) => count * CARD_WIDTH + (count - 1) * H_GAP;
+  const gridWidth = rowWidth(cols);
+
+  let y = PADDING;
+  for (let start = 0; start < items.length; start += cols) {
+    const rowNodes = items.slice(start, start + cols);
+    let x = PADDING + (gridWidth - rowWidth(rowNodes.length)) / 2;
+    let maxH = 0;
+    for (const node of rowNodes) {
+      node.x = x; node.y = y;
+      node.el.style.left = x + "px";
+      node.el.style.top = y + "px";
+      x += CARD_WIDTH + H_GAP;
+      maxH = Math.max(maxH, node.h);
+    }
+    y += maxH + V_GAP;
+  }
+
+  const totalWidth = gridWidth + PADDING * 2;
+  const totalHeight = (items.length ? y - V_GAP : 0) + PADDING;
+  el.edges.setAttribute("width", totalWidth);
+  el.edges.setAttribute("height", totalHeight);
+  el.edges.style.width = totalWidth + "px";
+  el.edges.style.height = totalHeight + "px";
+  el.canvas.style.width = totalWidth + "px";
+  el.canvas.style.height = totalHeight + "px";
+}
+
+/* Raster-Ansicht des aktiven Filters anzeigen (etwaige Hervorhebung/Fokus
+   vorher abräumen). */
+function showFilterGrid(tree) {
+  el.canvas.classList.remove("subtree-mode", "has-selection");
+  el.edges.classList.remove("has-selection");
+  el.nodes.querySelectorAll(".card").forEach(c => c.classList.remove("hl", "focus"));
+  layoutGrid(tree, filterGridNodes(tree));
+  resetView();
+}
+
+/* Bühne an den aktuellen Filterzustand anpassen: Raster, wenn ein Filter aktiv
+   ist, sonst der vollständige Baum. Hebt dabei einen Subtree-Fokus auf. */
+function applyFilterView(tree) {
   if (!tree) return;
-  const m = matchingNodeKeys(tree);
-  const edges = tree._edgeList || [];
-  if (!m) {
-    el.canvas.classList.remove("has-filter");
-    el.edges.classList.remove("has-filter");
-    tree.nodes.forEach(n => n.el && n.el.classList.remove("filter-match", "filter-direct"));
-    edges.forEach(e => e.path.classList.remove("flt"));
-    return;
-  }
-  el.canvas.classList.add("has-filter");
-  el.edges.classList.add("has-filter");
-  for (const n of tree.nodes) {
-    if (!n.el) continue;
-    n.el.classList.toggle("filter-match", m.all.has(n.key));
-    n.el.classList.toggle("filter-direct", m.direct.has(n.key));
-  }
-  edges.forEach(e => e.path.classList.toggle("flt", m.all.has(e.from) && m.all.has(e.to)));
+  tree.focusKey = null;
+  el.canvas.classList.remove("subtree-mode", "has-selection");
+  el.edges.classList.remove("has-selection");
+  el.nodes.querySelectorAll(".card").forEach(c => c.classList.remove("hl", "focus"));
+  if (!tree.nodes.length) return;
+  if (filterActive(tree)) showFilterGrid(tree);
+  else { relayout(tree, tree.nodes); resetView(); }
 }
 
 function hideFilterSidebar() {
@@ -569,7 +614,7 @@ function renderFilterSidebar(tree) {
   reset.addEventListener("click", () => {
     if (!filterActive(tree)) return;
     tree.activeFilters.clear();
-    applyFilter(tree);
+    applyFilterView(tree);
     renderFilterSidebar(tree);
   });
   el.filterContent.appendChild(reset);
@@ -589,8 +634,7 @@ function renderFilterSidebar(tree) {
       b.addEventListener("click", () => {
         if (tree.activeFilters.has(id)) tree.activeFilters.delete(id);
         else tree.activeFilters.add(id);
-        if (tree.focusKey) clearFocus();   // Subtree-Fokus weicht dem Filter
-        applyFilter(tree);
+        applyFilterView(tree);   // hebt auch einen aktiven Subtree-Fokus auf
         renderFilterSidebar(tree);
       });
       el.filterContent.appendChild(b);
@@ -829,13 +873,14 @@ function renderActive() {
   hideOverlay();
   layoutAndRender(tree);
   renderFilterSidebar(tree);   // vor resetView: Viewport-Breite (Sidebar-Versatz) muss stehen
-  if (!tree.view.initialized) resetView(); else applyView();
-  // Subtree-Fokus nach Neu-Rendern wiederherstellen (Karten sind neu erzeugt)
-  if (tree.focusKey) {
-    const fn = tree.byKey[tree.focusKey];
-    if (fn) focusSubtree(fn); else tree.focusKey = null;
+  // Reihenfolge: Subtree-Fokus > Filter-Raster > vollständiger Baum.
+  if (tree.focusKey && tree.byKey[tree.focusKey]) {
+    focusSubtree(tree.byKey[tree.focusKey]);   // setzt View selbst
   } else {
-    applyFilter(tree);   // Filter-Hervorhebung auf die frischen Karten anwenden
+    tree.focusKey = null;
+    if (filterActive(tree)) showFilterGrid(tree);
+    else if (!tree.view.initialized) resetView();
+    else applyView();
   }
 }
 
@@ -913,7 +958,14 @@ function runSearch(query) {
   if (!query) return;
   const hit = tree.nodes.find(n => n.name.toLowerCase().includes(query));
   if (!hit) return;
-  if (tree.focusKey) clearFocus();   // ggf. Subtree-Fokus aufheben, damit der Treffer sichtbar ist
+  // Filter-Raster bzw. Subtree-Fokus aufheben, damit der Treffer sichtbar wird.
+  if (filterActive(tree)) {
+    tree.activeFilters.clear();
+    renderFilterSidebar(tree);
+    applyFilterView(tree);
+  } else if (tree.focusKey) {
+    clearFocus();
+  }
   hit.el.classList.add("search-hit");
   centerOnNode(hit);
   highlight(hit);

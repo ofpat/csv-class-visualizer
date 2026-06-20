@@ -192,13 +192,6 @@ input:focus { outline: none; border-color: var(--accent); }
 .edges.has-selection .edge { opacity: .12; }
 .edge.hl { stroke: var(--edge-hi); stroke-width: 2.5; opacity: 1 !important; }
 
-/* Filter-Zustand (Sidebar): Treffer + ihre Tier-Pfade voll sichtbar, Rest abgeblendet */
-.canvas.has-filter .card { opacity: .16; }
-.canvas.has-filter .card.filter-match { opacity: 1; }
-.card.filter-direct { box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
-.edges.has-filter .edge { opacity: .1; }
-.edge.flt { stroke: var(--edge-hi); stroke-width: 2.5; opacity: 1 !important; }
-
 /* Linien-Fokus: Klick auf eine Klasse zeigt nur deren Vorfahren + Nachkommen
    (kompakt neu angeordnet). Ein-/Ausblenden geschieht per Re-Layout in JS;
    hier nur die Hervorhebung der fokussierten Karte. */

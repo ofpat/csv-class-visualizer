@@ -37,11 +37,11 @@ niemals ins Google Sheet, es liest nur.
 - **Filter-Sidebar** (links): gruppiert die Klassen nach **Waffen-** und
   **Rüstungstypen**. Die Kategorien werden **aus den vorhandenen Daten abgeleitet**
   (Spalten *Waffe*/*Rüstung*) – hinter jeder steht die Anzahl der Klassen, z.B.
-  *Schwert (2)*. Klick filtert den Baum: die passenden Klassen **inkl. ihres
-  Tier-Pfades nach oben** (alle Vorfahren bis zur Wurzel) bleiben hervorgehoben,
-  der Rest wird abgeblendet. **Mehrfachauswahl** ist möglich (ODER-Verknüpfung);
-  **„Alle anzeigen"** setzt zurück. Filter und Subtree-Fokus sind entkoppelt: ein
-  Klick auf eine Karte fokussiert wie gewohnt, danach kehrt das Filter-Dimmen
+  *Schwert (2)*. Ist ein Filter aktiv, zeigt die Bühne **nur die passenden
+  Klassen in einem schlichten Raster** (ohne Verbindungen). Ein **Klick auf eine
+  Karte** öffnet deren Übersicht (kompletter Pfad nach oben bis zur Wurzel **und**
+  alle Nachkommen, mit Kanten); Klick ins Leere führt zurück ins Raster.
+  **Mehrfachauswahl** ist möglich (ODER-Verknüpfung); **„Alle anzeigen"** setzt
   zurück.
 - **Verlinkte Fähigkeiten**: Aktiv-/Passiv-Einträge, die einem Skill aus den
   Tabs *Aktive/Passive Skills* entsprechen, sind verlinkt – **Hover** zeigt die
@@ -208,7 +208,10 @@ Tool-Inhalt in den Root eines `gh-pages`-Branches, Pages-Source auf
 3. **Filter-Sidebar** prüfen:
    - Links erscheinen die Sektionen *Waffen* und *Rüstung* mit Anzahlen, z.B.
      *Schwert (2)*, *Dolch (2)*, *Leichte Rüstung (6)*, *Keine Rüstung (3)*.
-   - Klick auf **Schwert** lässt nur *Söldner*/*Knappe* **plus deren Tier-Pfad**
-     (*Zivilist*, *Rekrut*) hervorgehoben; der Rest wird abgeblendet.
+   - Klick auf **Schwert** zeigt nur *Söldner* und *Knappe* in einem schlichten
+     Raster (ohne Kanten).
+   - **Klick auf *Knappe*** öffnet dessen Übersicht: der Pfad nach oben
+     (*Rekrut*) sowie alle Nachkommen, mit Verbindungen. Klick ins Leere führt
+     zurück ins Raster.
    - Eine zweite Kategorie (z.B. *Dolch*) erweitert die Auswahl (ODER); erneuter
      Klick hebt sie auf. **„Alle anzeigen"** setzt den Filter zurück.
