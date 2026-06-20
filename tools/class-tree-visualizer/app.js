@@ -56,6 +56,9 @@ const state = {
 /* ---------- DOM-Referenzen ---------- */
 const el = {
   treeTabs:    document.getElementById("treeTabs"),
+  stage:       document.getElementById("stage"),
+  filterSidebar: document.getElementById("filterSidebar"),
+  filterContent: document.getElementById("filterContent"),
   viewport:    document.getElementById("viewport"),
   canvas:      document.getElementById("canvas"),
   edges:       document.getElementById("edges"),
@@ -334,8 +337,8 @@ function createCard(node) {
     a.addEventListener("mousemove", moveTip);
     a.addEventListener("mouseleave", hideTip);
   });
-  card.addEventListener("mouseenter", () => { if (!getActiveTree().focusKey) highlight(node); });
-  card.addEventListener("mouseleave", () => { if (!getActiveTree().focusKey) clearHighlight(); });
+  card.addEventListener("mouseenter", () => { const t = getActiveTree(); if (!t.focusKey && !filterActive(t)) highlight(node); });
+  card.addEventListener("mouseleave", () => { const t = getActiveTree(); if (!t.focusKey && !filterActive(t)) clearHighlight(); });
   card.addEventListener("click", (e) => {
     e.stopPropagation();
     const tree = getActiveTree();
@@ -473,6 +476,9 @@ function focusSubtree(node) {
   const tree = getActiveTree();
   tree.focusKey = node.key;
   clearHighlight();
+  // Filter-Dimmen während des Fokus visuell aussetzen (Auswahl bleibt erhalten).
+  el.canvas.classList.remove("has-filter");
+  el.edges.classList.remove("has-filter");
   const set = lineageSet(node);
   const visible = tree.nodes.filter(n => set.has(n.key));
   relayout(tree, visible);
@@ -486,7 +492,115 @@ function clearFocus() {
   tree.focusKey = null;
   el.canvas.classList.remove("subtree-mode");
   el.nodes.querySelectorAll(".card").forEach(c => c.classList.remove("focus", "hl"));
-  if (tree.nodes.length) { relayout(tree, tree.nodes); resetView(); }
+  if (tree.nodes.length) { relayout(tree, tree.nodes); applyFilter(tree); resetView(); }
+}
+
+/* ============================================================
+   Filter-Sidebar: gruppiert Klassen nach Waffen-/Rüstungstypen.
+   Die Kategorien werden aus den vorhandenen Node-Daten abgeleitet
+   (node.weapons / node.armor) – es werden keine Typen erfunden.
+   Mehrfachauswahl (OR); Treffer inkl. ihrer Tier-Pfade (Vorfahren)
+   bleiben sichtbar, der Rest wird abgeblendet.
+   ============================================================ */
+function filterActive(tree) {
+  return !!(tree && tree.activeFilters && tree.activeFilters.size);
+}
+
+/* label -> Anzahl Klassen, die diesen Typ führen (alphabetisch sortiert). */
+function collectCategories(tree, field) {
+  const counts = new Map();
+  for (const n of tree.nodes) for (const v of n[field]) counts.set(v, (counts.get(v) || 0) + 1);
+  return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0], "de"));
+}
+
+/* Direkt passende Knoten + alle ihre Vorfahren (Tier-Pfad bis zur Wurzel). */
+function matchingNodeKeys(tree) {
+  const sel = tree.activeFilters;
+  if (!sel || !sel.size) return null;
+  const direct = new Set();
+  for (const n of tree.nodes) {
+    const hit = n.weapons.some(w => sel.has("w:" + w)) || n.armor.some(a => sel.has("a:" + a));
+    if (hit) direct.add(n.key);
+  }
+  const all = new Set();
+  const up = (n) => { if (!n || all.has(n.key)) return; all.add(n.key); n.prereqs.forEach(up); };
+  direct.forEach(k => up(tree.byKey[k]));
+  return { direct, all };
+}
+
+/* Filter-Hervorhebung auf die (frisch gerenderten) Karten/Kanten anwenden. */
+function applyFilter(tree) {
+  if (!tree) return;
+  const m = matchingNodeKeys(tree);
+  const edges = tree._edgeList || [];
+  if (!m) {
+    el.canvas.classList.remove("has-filter");
+    el.edges.classList.remove("has-filter");
+    tree.nodes.forEach(n => n.el && n.el.classList.remove("filter-match", "filter-direct"));
+    edges.forEach(e => e.path.classList.remove("flt"));
+    return;
+  }
+  el.canvas.classList.add("has-filter");
+  el.edges.classList.add("has-filter");
+  for (const n of tree.nodes) {
+    if (!n.el) continue;
+    n.el.classList.toggle("filter-match", m.all.has(n.key));
+    n.el.classList.toggle("filter-direct", m.direct.has(n.key));
+  }
+  edges.forEach(e => e.path.classList.toggle("flt", m.all.has(e.from) && m.all.has(e.to)));
+}
+
+function hideFilterSidebar() {
+  el.stage.classList.remove("with-sidebar");
+  el.filterSidebar.classList.add("hidden");
+}
+
+function renderFilterSidebar(tree) {
+  if (!tree || !tree.nodes.length) { hideFilterSidebar(); return; }
+  const weapons = collectCategories(tree, "weapons");
+  const armor   = collectCategories(tree, "armor");
+  if (!weapons.length && !armor.length) { hideFilterSidebar(); return; }
+
+  el.filterContent.innerHTML = "";
+
+  const reset = document.createElement("button");
+  reset.className = "filter-reset" + (filterActive(tree) ? "" : " active");
+  reset.textContent = "Alle anzeigen";
+  reset.addEventListener("click", () => {
+    if (!filterActive(tree)) return;
+    tree.activeFilters.clear();
+    applyFilter(tree);
+    renderFilterSidebar(tree);
+  });
+  el.filterContent.appendChild(reset);
+
+  const section = (title, prefix, entries) => {
+    if (!entries.length) return;
+    const h = document.createElement("div");
+    h.className = "filter-group-title";
+    h.textContent = title;
+    el.filterContent.appendChild(h);
+    for (const [label, count] of entries) {
+      const id = prefix + ":" + label;
+      const b = document.createElement("button");
+      b.className = "filter-cat" + (tree.activeFilters.has(id) ? " active" : "");
+      b.innerHTML = `<span class="filter-cat-label">${esc(label)}</span>` +
+                    `<span class="filter-cat-count">${count}</span>`;
+      b.addEventListener("click", () => {
+        if (tree.activeFilters.has(id)) tree.activeFilters.delete(id);
+        else tree.activeFilters.add(id);
+        if (tree.focusKey) clearFocus();   // Subtree-Fokus weicht dem Filter
+        applyFilter(tree);
+        renderFilterSidebar(tree);
+      });
+      el.filterContent.appendChild(b);
+    }
+  };
+  section("Waffen", "w", weapons);
+  section("Rüstung", "a", armor);
+
+  el.stage.classList.add("with-sidebar");
+  el.filterSidebar.classList.remove("hidden");
 }
 
 /* ============================================================
@@ -594,6 +708,7 @@ async function loadTreeFromSheet(tree) {
     const { nodes, byKey, warnings } = buildTreeFromParts(parts);
     tree.nodes = nodes; tree.byKey = byKey; tree.warnings = warnings;
     tree.error = null; tree.focusKey = null; tree.view.initialized = false;
+    if (tree.activeFilters) tree.activeFilters.clear();
     if (warnings.length) console.warn(`[${tree.name}]\n` + warnings.join("\n"));
   } catch (err) {
     setTreeError(tree, err);
@@ -652,6 +767,7 @@ function newTree(name) {
     error: null, loading: false,
     view: { scale: 1, tx: 0, ty: 0, initialized: false },
     focusKey: null,
+    activeFilters: new Set(),   // Filter-IDs "w:<Waffe>" / "a:<Rüstung>"
   };
 }
 function getActiveTree() { return state.activeName ? state.trees[state.activeName] : null; }
@@ -684,6 +800,7 @@ function switchTree(name) {
 function renderActive() {
   const tree = getActiveTree();
   el.searchInput.value = "";
+  hideFilterSidebar();   // nur im erfolgreichen Render-Pfad wieder einblenden
   if (!tree) {
     el.nodes.innerHTML = ""; el.edges.innerHTML = "";
     showOverlay({ msg: "Keine Bäume konfiguriert.\nÖffne ⚙ Einstellungen oder lade eine lokale CSV.",
@@ -711,11 +828,14 @@ function renderActive() {
   }
   hideOverlay();
   layoutAndRender(tree);
+  renderFilterSidebar(tree);   // vor resetView: Viewport-Breite (Sidebar-Versatz) muss stehen
   if (!tree.view.initialized) resetView(); else applyView();
   // Subtree-Fokus nach Neu-Rendern wiederherstellen (Karten sind neu erzeugt)
   if (tree.focusKey) {
     const fn = tree.byKey[tree.focusKey];
     if (fn) focusSubtree(fn); else tree.focusKey = null;
+  } else {
+    applyFilter(tree);   // Filter-Hervorhebung auf die frischen Karten anwenden
   }
 }
 

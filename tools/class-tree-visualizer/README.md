@@ -34,6 +34,15 @@ niemals ins Google Sheet, es liest nur.
 - **Subtree-Fokus**: Klick auf eine Klasse zeigt nur deren Linie (alle Vorfahren
   **und** alle Nachkommen) und ordnet sie kompakt neu an. Erneuter Klick / Klick
   ins Leere hebt den Fokus auf.
+- **Filter-Sidebar** (links): gruppiert die Klassen nach **Waffen-** und
+  **Rüstungstypen**. Die Kategorien werden **aus den vorhandenen Daten abgeleitet**
+  (Spalten *Waffe*/*Rüstung*) – hinter jeder steht die Anzahl der Klassen, z.B.
+  *Schwert (2)*. Klick filtert den Baum: die passenden Klassen **inkl. ihres
+  Tier-Pfades nach oben** (alle Vorfahren bis zur Wurzel) bleiben hervorgehoben,
+  der Rest wird abgeblendet. **Mehrfachauswahl** ist möglich (ODER-Verknüpfung);
+  **„Alle anzeigen"** setzt zurück. Filter und Subtree-Fokus sind entkoppelt: ein
+  Klick auf eine Karte fokussiert wie gewohnt, danach kehrt das Filter-Dimmen
+  zurück.
 - **Verlinkte Fähigkeiten**: Aktiv-/Passiv-Einträge, die einem Skill aus den
   Tabs *Aktive/Passive Skills* entsprechen, sind verlinkt – **Hover** zeigt die
   Beschreibung, **Klick** öffnet die [Skill-Liste](../skill-list/) beim Skill.
@@ -196,3 +205,10 @@ Tool-Inhalt in den Root eines `gh-pages`-Branches, Pages-Source auf
      **und** *Verstossener* (beide als Mischklasse markiert).
    - Alle Fähigkeitstexte sind in den Karten lesbar.
    - Hover über *Zivilist* hebt alle direkten Kind-Klassen hervor.
+3. **Filter-Sidebar** prüfen:
+   - Links erscheinen die Sektionen *Waffen* und *Rüstung* mit Anzahlen, z.B.
+     *Schwert (2)*, *Dolch (2)*, *Leichte Rüstung (6)*, *Keine Rüstung (3)*.
+   - Klick auf **Schwert** lässt nur *Söldner*/*Knappe* **plus deren Tier-Pfad**
+     (*Zivilist*, *Rekrut*) hervorgehoben; der Rest wird abgeblendet.
+   - Eine zweite Kategorie (z.B. *Dolch*) erweitert die Auswahl (ODER); erneuter
+     Klick hebt sie auf. **„Alle anzeigen"** setzt den Filter zurück.

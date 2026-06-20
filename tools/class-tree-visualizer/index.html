@@ -27,7 +27,13 @@
     </div>
   </header>
 
-  <main class="stage">
+  <main id="stage" class="stage">
+    <!-- Filter-Sidebar: gruppiert Klassen nach Waffen-/Rüstungstypen -->
+    <aside id="filterSidebar" class="filter-sidebar hidden">
+      <div class="filter-header">Filter</div>
+      <div id="filterContent" class="filter-content"></div>
+    </aside>
+
     <div id="viewport" class="viewport">
       <div id="canvas" class="canvas">
         <svg id="edges" class="edges"></svg>
