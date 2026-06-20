@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Story-/Dialog-Visualizer</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left"><h1>🗺️ Story-/Dialog-Visualizer</h1></div>
+    <div class="topbar-center"></div>
+    <div class="topbar-right">
+      <span id="sourceBadge" class="source-badge" title="Aktive Datenquelle"></span>
+      <button id="reloadBtn" class="btn" title="Neu laden">↻ Neu laden</button>
+      <a class="btn" href="../class-tree-visualizer/index.html" title="Klassenbaum öffnen">⚔️ Klassen</a>
+      <button id="settingsBtn" class="btn icon-btn" title="Einstellungen / Quelle">⚙</button>
+    </div>
+  </header>
+
+  <main id="stage" class="stage">
+    <!-- Filter-Sidebar: gruppiert nach Kapitel und Step-Typ -->
+    <aside id="filterSidebar" class="filter-sidebar hidden">
+      <div class="filter-header">Filter</div>
+      <div id="filterContent" class="filter-content"></div>
+    </aside>
+
+    <div id="viewport" class="viewport">
+      <div id="canvas" class="canvas">
+        <svg id="edges" class="edges"></svg>
+        <div id="labels" class="labels"></div>
+        <div id="nodes" class="nodes"></div>
+      </div>
+    </div>
+
+    <!-- Drill-down-Panel (rechts) -->
+    <aside id="drillPanel" class="drill-panel hidden">
+      <div class="drill-header">
+        <span id="drillTitle"></span>
+        <button id="drillCloseBtn" class="btn icon-btn">✕</button>
+      </div>
+      <div id="drillBody" class="drill-body"></div>
+    </aside>
+
+    <!-- Overlay: Lade-/Fehler-/Leerzustand -->
+    <div id="overlay" class="overlay hidden">
+      <div class="overlay-box">
+        <div id="overlaySpinner" class="spinner hidden"></div>
+        <div id="overlayMsg" class="overlay-msg"></div>
+        <div id="overlayActions" class="overlay-actions"></div>
+      </div>
+    </div>
+
+    <div class="zoom-controls">
+      <button id="zoomInBtn" class="btn icon-btn" title="Vergrößern">+</button>
+      <button id="zoomResetBtn" class="btn icon-btn" title="Ansicht zurücksetzen">⤢</button>
+      <button id="zoomOutBtn" class="btn icon-btn" title="Verkleinern">−</button>
+    </div>
+
+    <div class="legend">
+      <span class="legend-item"><span class="swatch s-dialog"></span>💬 Dialog</span>
+      <span class="legend-item"><span class="swatch s-battle"></span>⚔️ Kampf</span>
+      <span class="legend-item"><span class="swatch s-branch"></span>🔀 Branch</span>
+      <span class="legend-item"><span class="swatch s-end"></span>🏁 Ende</span>
+      <span class="legend-item"><span class="swatch s-flag"></span>⚑ Flag-Brücke</span>
+      <span class="legend-item"><span class="swatch s-dead"></span>🔴 Sackgasse</span>
+    </div>
+  </main>
+
+  <!-- Settings: Quelle (Vorlage / Google-Sheet) -->
+  <div id="settingsPanel" class="settings-panel hidden">
+    <div class="settings-inner">
+      <div class="settings-header">
+        <h2>⚙ Datenquelle</h2>
+        <button id="settingsCloseBtn" class="btn icon-btn">✕</button>
+      </div>
+      <p class="hint">
+        Stufe 1 (Standard) nutzt das eingebettete <code>story_dialog_template.xlsx</code>.
+        Für die spätere Live-Quelle: Sheet-URL/ID eintragen und je Tab die <code>gid</code>
+        angeben — derselbe Pfad wie beim Klassen-Tool. Wird nur lokal gespeichert.
+      </p>
+      <label class="field">
+        <span>Sheet-URL oder ID</span>
+        <input id="sheetRefInput" type="text" placeholder="https://docs.google.com/…/d/e/…/pub  oder  Spreadsheet-ID" />
+      </label>
+      <div class="field">
+        <span>Tab-GIDs</span>
+        <div id="gidList" class="gid-list"></div>
+      </div>
+      <div class="settings-footer">
+        <button id="saveSheetBtn" class="btn btn-primary">Speichern &amp; aus Sheet laden</button>
+        <button id="useFixtureBtn" class="btn">Vorlage (xlsx) verwenden</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Datenschicht (aus Prompt 1, unverändert): parse -> fixture -> sources -> graph -->
+  <script src="data/parse.js"></script>
+  <script src="data/fixture.js"></script>
+  <script src="data/sources.js"></script>
+  <script src="model/graph.js"></script>
+  <!-- Rendering + Interaktion -->
+  <script src="app.js"></script>
+</body>
+</html>
