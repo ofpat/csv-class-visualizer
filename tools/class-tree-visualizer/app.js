@@ -21,6 +21,8 @@ const LS_KEY = "ktv-settings-v2";
 const CARD_WIDTH = 240;        // muss zur Breite in style.css passen
 const H_GAP = 36;              // horizontaler Abstand zwischen Karten
 const V_GAP = 90;              // vertikaler Abstand zwischen Tiers
+const WRAP_V_GAP = 28;         // Abstand zwischen umgebrochenen Reihen desselben Tiers
+const MAX_PER_ROW = 12;        // max. Karten pro Reihe -> danach Umbruch
 const PADDING = 80;            // Rand um das Layout
 
 /* Vorbelegung. Wird nur genutzt, wenn noch nichts gespeichert ist.
@@ -247,31 +249,41 @@ function relayout(tree, visibleNodes) {
   for (const n of visibleNodes) (tiers[n.tier] = tiers[n.tier] || []).push(n);
   const tierKeys = Object.keys(tiers).map(Number).sort((a, b) => a - b);
 
+  // Breite richtet sich nach der längsten Reihe (höchstens MAX_PER_ROW Karten).
+  const rowWidth = (count) => count * CARD_WIDTH + (count - 1) * H_GAP;
   let maxTierWidth = 0;
   for (const t of tierKeys) {
-    const g = tiers[t];
-    maxTierWidth = Math.max(maxTierWidth, g.length * CARD_WIDTH + (g.length - 1) * H_GAP);
+    const rowLen = Math.min(tiers[t].length, MAX_PER_ROW);
+    maxTierWidth = Math.max(maxTierWidth, rowWidth(rowLen));
   }
 
   let y = PADDING;
+  let lastGap = 0;
   for (const t of tierKeys) {                 // nur belegte Tiers -> auch vertikal kompakt
     const g = tiers[t];
     g.sort((a, b) => a.name.localeCompare(b.name, "de"));
-    const tierW = g.length * CARD_WIDTH + (g.length - 1) * H_GAP;
-    let x = PADDING + (maxTierWidth - tierW) / 2;
-    let maxH = 0;
-    for (const node of g) {
-      node.x = x; node.y = y;
-      node.el.style.left = x + "px";
-      node.el.style.top = y + "px";
-      x += CARD_WIDTH + H_GAP;
-      maxH = Math.max(maxH, node.h);
+    // Tier in Reihen zu je höchstens MAX_PER_ROW Karten aufteilen (Umbruch).
+    for (let start = 0; start < g.length; start += MAX_PER_ROW) {
+      const rowNodes = g.slice(start, start + MAX_PER_ROW);
+      const tierW = rowWidth(rowNodes.length);
+      let x = PADDING + (maxTierWidth - tierW) / 2;
+      let maxH = 0;
+      for (const node of rowNodes) {
+        node.x = x; node.y = y;
+        node.el.style.left = x + "px";
+        node.el.style.top = y + "px";
+        x += CARD_WIDTH + H_GAP;
+        maxH = Math.max(maxH, node.h);
+      }
+      // Umgebrochene Reihen desselben Tiers enger; echter Tier-Wechsel weiter.
+      const isLastRow = start + MAX_PER_ROW >= g.length;
+      lastGap = isLastRow ? V_GAP : WRAP_V_GAP;
+      y += maxH + lastGap;
     }
-    y += maxH + V_GAP;
   }
 
   const totalWidth = maxTierWidth + PADDING * 2;
-  const totalHeight = (tierKeys.length ? y - V_GAP : 0) + PADDING;
+  const totalHeight = (tierKeys.length ? y - lastGap : 0) + PADDING;
   el.edges.setAttribute("width", totalWidth);
   el.edges.setAttribute("height", totalHeight);
   el.edges.style.width = totalWidth + "px";
@@ -506,15 +518,17 @@ function resetView() {
   applyView();
 }
 function initPanZoom() {
-  let panning = false, sx = 0, sy = 0, stx = 0, sty = 0;
+  const DRAG_THRESHOLD = 4;   // px – darunter gilt es als Klick, darüber als Ziehen
+  let panning = false, dragged = false, sx = 0, sy = 0, stx = 0, sty = 0;
   el.viewport.addEventListener("mousedown", (e) => {
     if (e.target.closest(".card")) return;
-    panning = true; el.viewport.classList.add("panning");
+    panning = true; dragged = false; el.viewport.classList.add("panning");
     sx = e.clientX; sy = e.clientY;
     const v = getActiveTree().view; stx = v.tx; sty = v.ty;
   });
   window.addEventListener("mousemove", (e) => {
     if (!panning) return;
+    if (Math.abs(e.clientX - sx) > DRAG_THRESHOLD || Math.abs(e.clientY - sy) > DRAG_THRESHOLD) dragged = true;
     const v = getActiveTree().view;
     v.tx = stx + (e.clientX - sx); v.ty = sty + (e.clientY - sy);
     applyView();
@@ -522,6 +536,7 @@ function initPanZoom() {
   window.addEventListener("mouseup", () => { panning = false; el.viewport.classList.remove("panning"); });
   el.viewport.addEventListener("click", (e) => {
     if (e.target.closest(".card")) return;
+    if (dragged) return;   // war ein Ziehen, kein Klick -> Fokus nicht abwählen
     const tree = getActiveTree();
     if (tree && tree.focusKey) clearFocus();   // Klick ins Leere -> Fokus aufheben
   });
