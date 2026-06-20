@@ -150,7 +150,9 @@
      überbrücken die Bänder.
      ============================================================ */
   function computeLayout(g) {
-    const struct = g.edges.filter(e => e.kind !== "flag");
+    // Struktur-Kanten = Ablauf/Branch INNERHALB eines Kapitels. Flag-Brücken
+    // UND Kapitel-Verkettungen überspannen Bänder und zählen nicht zur Tiefe.
+    const struct = g.edges.filter(e => e.kind !== "flag" && e.kind !== "chapter");
 
     // Tiefe (Spalte) via Längster-Pfad-Relaxation
     const depth = {};
@@ -244,14 +246,23 @@
   function createCard(n) {
     const card = document.createElement("div");
     const dead = n.diagnostics.some(d => d.severity === "dead-end");
-    const term = n.diagnostics.some(d => d.severity === "terminal-chapter");
-    card.className = `node type-${n.type}` + (dead ? " dead-end" : "") + (term ? " terminal" : "");
+    const unreach = n.diagnostics.some(d => d.severity === "unreachable");
+    const intEnd = n.diagnostics.some(d => d.severity === "intentional-end");
+    card.className = `node type-${n.type}`
+      + (dead ? " dead-end" : "") + (unreach ? " unreachable" : "") + (intEnd ? " terminal" : "");
     card.dataset.id = n.id;
 
+    const dmsg = (sev) => esc((n.diagnostics.find(d => d.severity === sev) || {}).message || "");
     const badges = [];
-    if (n.isEntry) badges.push(`<span class="badge entry" title="Kapitel-Eintritt${n.entryGate ? `: ${esc(n.entryGate.flag)}=${esc(n.entryGate.value)}` : ""}">⮞ Eintritt</span>`);
-    if (dead) badges.push(`<span class="badge dead" title="${esc(n.diagnostics.find(d=>d.severity==='dead-end').message)}">🔴 Sackgasse</span>`);
-    else if (term) badges.push(`<span class="badge term" title="${esc(n.diagnostics.find(d=>d.severity==='terminal-chapter').message)}">🟠 Endpunkt</span>`);
+    if (n.isEntry) {
+      const condTxt = (n.entryConditions && n.entryConditions.length)
+        ? n.entryConditions.map(c => `${c.flag}=${c.value}`).join("; ")
+        : "Startkapitel (kein Gate)";
+      badges.push(`<span class="badge entry" title="Kapitel-Eintritt: ${esc(condTxt)}">⮞ Eintritt</span>`);
+    }
+    if (dead) badges.push(`<span class="badge dead" title="${dmsg('dead-end')}">🔴 Sackgasse</span>`);
+    if (unreach) badges.push(`<span class="badge dead" title="${dmsg('unreachable')}">⛔ Unerreichbar</span>`);
+    if (intEnd) badges.push(`<span class="badge term" title="${dmsg('intentional-end')}">🏁 Gewolltes Ende</span>`);
 
     const rows = [];
     rows.push(`<div class="node-head">
@@ -294,9 +305,11 @@
       const a = g._byId[e.from], b = g._byId[e.to];
       if (!a || !b) continue;
       const path = document.createElementNS(SVGNS, "path");
-      const isFlag = e.kind === "flag";
+      // Flag-Brücken UND Kapitel-Verkettungen werden als vertikale Bögen
+      // zwischen den Bändern gezeichnet; Ablauf/Branch horizontal.
+      const isBridge = e.kind === "flag" || e.kind === "chapter";
       let d;
-      if (isFlag) {
+      if (isBridge) {
         // Brücke: von Unterkante Quelle zu Oberkante Ziel, weit gebogen.
         const sx = a.x + CARD_W / 2, sy = a.y + a.h;
         const ex = b.x + CARD_W / 2, ey = b.y;
@@ -314,14 +327,15 @@
       el.edges.appendChild(path);
 
       let labelEl = null;
-      const labelText = isFlag ? e.label : (e.kind === "branch-true" ? "true" : e.kind === "branch-false" ? "false" : "");
+      const labelText = (e.kind === "flag" || e.kind === "chapter") ? e.label
+        : (e.kind === "branch-true" ? "true" : e.kind === "branch-false" ? "false" : "");
       if (labelText) {
         labelEl = document.createElement("div");
-        labelEl.className = "edge-label" + (isFlag ? " flag" : " branch");
+        labelEl.className = "edge-label" + (e.kind === "flag" ? " flag" : e.kind === "chapter" ? " chapter" : " branch");
         labelEl.textContent = labelText;
         // grob am Pfad-Mittelpunkt
-        const mx = isFlag ? (a.x + CARD_W / 2 + b.x + CARD_W / 2) / 2 : (a.x + CARD_W + b.x) / 2;
-        const my = isFlag ? (a.y + a.h + b.y) / 2 : (a.y + a.h / 2 + b.y + b.h / 2) / 2;
+        const mx = isBridge ? (a.x + CARD_W / 2 + b.x + CARD_W / 2) / 2 : (a.x + CARD_W + b.x) / 2;
+        const my = isBridge ? (a.y + a.h + b.y) / 2 : (a.y + a.h / 2 + b.y + b.h / 2) / 2;
         labelEl.style.left = mx + "px";
         labelEl.style.top = my + "px";
         el.labels.appendChild(labelEl);

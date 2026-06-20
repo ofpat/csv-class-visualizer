@@ -14,8 +14,10 @@
   --branch:    #9a6fd6;
   --end:       #5a8c66;
   --flag:      #d9a441;   /* Flag-Brücke (gold) */
+  --chapter:   #6fc18a;   /* Kapitel-Verkettung Ende→Anfang (grün) */
   --dead:      #ff4d4d;   /* Sackgasse */
-  --term:      #e0a44a;   /* terminales Kapitel */
+  --unreach:   #7a7388;   /* unerreichbares Kapitel (gedämpft) */
+  --term:      #e0a44a;   /* gewolltes Ende / terminaler Knoten */
 
   --edge:      #4a4357;
   --shadow:    0 4px 18px rgba(0,0,0,.45);
@@ -92,6 +94,7 @@ input:focus { outline: none; border-color: var(--accent); }
 .node.type-end    { border-left-color: var(--end); }
 
 .node.dead-end { border-color: var(--dead); box-shadow: 0 0 0 2px var(--dead), var(--shadow); }
+.node.unreachable { border-color: var(--unreach); border-style: dashed; opacity: .75; }
 .node.terminal { border-color: var(--term); }
 
 .node-head { display: flex; align-items: center; gap: .4rem; margin-bottom: .25rem; }
@@ -129,6 +132,7 @@ input:focus { outline: none; border-color: var(--accent); }
 .edge-branch-true  { stroke: var(--end); }
 .edge-branch-false { stroke: var(--battle); }
 .edge-flag { stroke: var(--flag); stroke-width: 2; stroke-dasharray: 6 5; }
+.edge-chapter { stroke: var(--chapter); stroke-width: 2.5; }
 .canvas.has-selection .edge { opacity: .1; }
 .edge.hl { opacity: 1 !important; stroke-width: 3; }
 .edge.filtered-out { opacity: .06; }
@@ -140,6 +144,7 @@ input:focus { outline: none; border-color: var(--accent); }
   background: rgba(20,18,26,.92); border: 1px solid var(--border); color: var(--text-dim);
 }
 .edge-label.flag { color: var(--flag); border-color: var(--flag); }
+.edge-label.chapter { color: var(--chapter); border-color: var(--chapter); font-weight: 600; }
 .edge-label.branch { font-size: .6rem; }
 .edge-label.hl { color: var(--text); border-color: var(--accent); }
 .edge-label.filtered-out { opacity: .12; }

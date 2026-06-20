@@ -123,7 +123,35 @@ window.SDV.FIXTURE = {
    "Kapitel 2b — Nach dem Sandsturm",
    "bg_dunes",
    "music_south",
-   "Südroute Abschluss"
+   "Südroute Abschluss + Pfadwahl (desert_path)"
+  ],
+  [
+   "tl_c3_north",
+   "Kapitel 3 — Zuflucht im Norden",
+   "bg_snow",
+   "music_north",
+   "Nordroute-Finale"
+  ],
+  [
+   "tl_c3_desert_a",
+   "Kapitel 3 — Die Oase",
+   "bg_oasis",
+   "music_south",
+   "Wüsten-Sub-Branch A"
+  ],
+  [
+   "tl_c3_desert_b",
+   "Kapitel 3 — Der Canyon",
+   "bg_canyon",
+   "music_south",
+   "Wüsten-Sub-Branch B"
+  ],
+  [
+   "tl_c4_desert",
+   "Kapitel 4 — Freiheit",
+   "bg_horizon",
+   "music_calm",
+   "Zusammenführung der Wüstenpfade"
   ]
  ],
  "lines": [
@@ -360,6 +388,71 @@ window.SDV.FIXTURE = {
    "",
    "",
    ""
+  ],
+  [
+   "tl_c2b_after",
+   "20",
+   "saphira",
+   "Zwei Wege durch die Wüste. Welcher soll es sein?",
+   "Two ways through the desert. Which shall it be?",
+   "wary",
+   "",
+   "",
+   "",
+   "ch_c2b_path",
+   "Pfadwahl innerhalb der Wüste -> Sub-Branch (desert_path)"
+  ],
+  [
+   "tl_c3_north",
+   "10",
+   "bjorn",
+   "Hier seid ihr sicher. Die Berge halten Wache.",
+   "You're safe here. The mountains stand guard.",
+   "approving",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "tl_c3_desert_a",
+   "10",
+   "saphira",
+   "Die Oase. Wasser — und Verbündete.",
+   "The oasis. Water — and allies.",
+   "relieved",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "tl_c3_desert_b",
+   "10",
+   "saphira",
+   "Der Canyon ist eng, aber er führt hindurch.",
+   "The canyon is narrow, but it leads through.",
+   "wary",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "tl_c4_desert",
+   "10",
+   "aldric",
+   "Wir haben die Wüste überlebt. Frei.",
+   "We survived the desert. Free.",
+   "tired",
+   "",
+   "",
+   "",
+   "",
+   "Beide Pfade enden hier (Merge)"
   ]
  ],
  "choices": [
@@ -432,6 +525,34 @@ window.SDV.FIXTURE = {
    "north",
    "",
    ""
+  ],
+  [
+   "ch_c2b_path",
+   "major",
+   "1",
+   "Zur Oase — Wasser und Verbündete.",
+   "To the oasis — water and allies.",
+   "Diskriminator innerhalb der Wüstenroute: bestimmt das Sub-Kapitel (Oase vs. Canyon).",
+   "",
+   "",
+   "desert_path",
+   "oasis",
+   "",
+   "Sub-Branch A"
+  ],
+  [
+   "ch_c2b_path",
+   "",
+   "2",
+   "Durch den Canyon — kürzer, gefährlicher.",
+   "Through the canyon — shorter, riskier.",
+   "",
+   "",
+   "",
+   "desert_path",
+   "canyon",
+   "",
+   "Sub-Branch B"
   ]
  ],
  "combat_events": [
@@ -464,31 +585,59 @@ window.SDV.FIXTURE = {
  "chapters_meta": [
   [
    "chapter_id",
+   "route",
    "title",
-   "entry_flag",
-   "entry_value",
+   "entry_conditions",
    "notes"
   ],
   [
    "chapter_01",
-   "Die Brücke",
    "",
+   "Die Brücke",
    "",
    "Auftakt — kein Eintritts-Gate (Spielstart)"
   ],
   [
    "chapter_02a",
-   "Kapitel 2a — Der Norden",
-   "escape_route",
    "north",
-   "Fortsetzung NUR wenn Nordroute gewählt"
+   "Kapitel 2a — Der Norden",
+   "chapter_01_completed=true; escape_route=north",
+   "Folgekapitel: Kap.1 beendet UND Nordroute gewählt"
+  ],
+  [
+   "chapter_03_north",
+   "north",
+   "Kapitel 3 — Zuflucht im Norden",
+   "chapter_02a_completed=true",
+   "Lineare Fortsetzung der Nordroute"
   ],
   [
    "chapter_02b",
-   "Kapitel 2b — Der Süden",
-   "escape_route",
    "desert",
-   "Fortsetzung NUR wenn Südroute (Wüste) gewählt"
+   "Kapitel 2b — Der Süden",
+   "chapter_01_completed=true; escape_route=desert",
+   "Folgekapitel: Kap.1 beendet UND Wüstenroute gewählt"
+  ],
+  [
+   "chapter_03_desert_a",
+   "desert",
+   "Kapitel 3 — Die Oase",
+   "chapter_02b_completed=true; desert_path=oasis",
+   "Sub-Branch A der Wüste (desert_path=oasis)"
+  ],
+  [
+   "chapter_03_desert_b",
+   "desert",
+   "Kapitel 3 — Der Canyon",
+   "chapter_02b_completed=true; desert_path=canyon",
+   "Sub-Branch B der Wüste (desert_path=canyon)"
+  ],
+  [
+   "chapter_04_desert",
+   "desert",
+   "Kapitel 4 — Freiheit",
+   "chapter_03_desert_completed=true",
+   "MERGE: beide Sub-Branches setzen chapter_03_desert_completed"
   ]
  ],
  "chapters": [
@@ -584,12 +733,28 @@ window.SDV.FIXTURE = {
    "",
    "",
    "",
-   "c1_s60",
+   "c1_s55",
    "",
    "",
    "",
    "",
-   "Aldric tot -> springt zu Ende"
+   "Aldric tot -> Bad-End"
+  ],
+  [
+   "chapter_01",
+   "c1_s55",
+   "55",
+   "end",
+   "game_over_aldric_dead",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "ÄNDERUNG 1: end mit ref = eigenes Bad-End-Flag (kein chapter_xx_completed)"
   ],
   [
    "chapter_01",
@@ -605,7 +770,7 @@ window.SDV.FIXTURE = {
    "",
    "",
    "",
-   "Kapitelende (setzt chapter_01_completed)"
+   "Kapitelende (ref leer -> Fallback chapter_01_completed)"
   ],
   [
    "chapter_02a",
@@ -733,7 +898,135 @@ window.SDV.FIXTURE = {
    "",
    "",
    "",
-   "Ende 2b (setzt chapter_02b_completed)"
+   "Ende 2b (ref leer -> Fallback chapter_02b_completed)"
+  ],
+  [
+   "chapter_03_north",
+   "c3n_s10",
+   "10",
+   "dialog",
+   "tl_c3_north",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "Nordroute, lineare Fortsetzung"
+  ],
+  [
+   "chapter_03_north",
+   "c3n_s20",
+   "20",
+   "end",
+   "ending_north_refuge",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "Gewolltes Ende (Präfix ending_) -> kein roter Sackgassen-Knoten"
+  ],
+  [
+   "chapter_03_desert_a",
+   "c3da_s10",
+   "10",
+   "dialog",
+   "tl_c3_desert_a",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "Wüsten-Sub-Branch A (Oase)"
+  ],
+  [
+   "chapter_03_desert_a",
+   "c3da_s20",
+   "20",
+   "end",
+   "chapter_03_desert_completed",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "MERGE-Flag: dasselbe wie Sub-Branch B"
+  ],
+  [
+   "chapter_03_desert_b",
+   "c3db_s10",
+   "10",
+   "dialog",
+   "tl_c3_desert_b",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "Wüsten-Sub-Branch B (Canyon)"
+  ],
+  [
+   "chapter_03_desert_b",
+   "c3db_s20",
+   "20",
+   "end",
+   "chapter_03_desert_completed",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "MERGE-Flag: dasselbe wie Sub-Branch A"
+  ],
+  [
+   "chapter_04_desert",
+   "c4d_s10",
+   "10",
+   "dialog",
+   "tl_c4_desert",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "Zusammenführung beider Wüstenpfade"
+  ],
+  [
+   "chapter_04_desert",
+   "c4d_s20",
+   "20",
+   "end",
+   "ending_desert_freedom",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "Gewolltes Ende der Wüstenroute"
   ]
  ]
 };

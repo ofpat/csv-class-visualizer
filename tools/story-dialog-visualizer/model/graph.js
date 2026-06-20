@@ -6,11 +6,18 @@
      Nodes  = chapter-Steps (dialog | battle | branch | end), type als Attribut.
      Edges  = (a) Ablauf innerhalb eines Kapitels: order bzw. expliziter `next`;
               (b) branch -> zwei Kanten (true/false), Label branch_flag=branch_value;
-              (c) FLAG-Brücken: einzige Verbindung ZWISCHEN Kapiteln. Eine Quelle,
-                  die ein Flag schreibt (choices.set_flag | combat_events.effects |
-                  line.action set_flag | end-Step -> chapter_xx_completed), wird mit
-                  jedem Step verbunden, der dieses Flag liest (chapters_meta.entry_flag
-                  oder chapters.branch_flag / condition_flag).
+              (c) FLAG-Brücken (intra-chapter): ein flag-schreibender Step
+                  (choices.set_flag | combat_events.effects | line.action set_flag)
+                  wird mit einem branch/condition-Step verbunden, der es liest;
+              (d) KAPITEL-VERKETTUNG "chapter" (inter-chapter): vom end-Step eines
+                  Vorgängers zum ersten Step eines Folgekapitels. Der Vorgänger ist
+                  das Kapitel, dessen end-Step-Flag (ref-Spalte, sonst
+                  "{chapter_id}_completed") in den entry_conditions des Folgekapitels
+                  steht; die übrigen Bedingungen (Diskriminatoren wie route/Pfadwahl)
+                  bilden das Kanten-Label.
+
+     end-Step setzt: ref-Spalte (falls gesetzt), sonst "{chapter_id}_completed".
+     Flags mit Präfix game_over_/ending_ gelten als gewollte Enden (Terminals).
 
    Zusätzlich: Drill-down je Step (dialog -> timeline -> lines -> choice_group ->
    choices; battle -> map + combat_events). Das KERN-Graphmodell bleibt aber die
@@ -104,6 +111,10 @@
         readsFlags: [],
         isEntry: false,
         entryGate: null,
+        entryConditions: [],
+        diagnostics: [],
+        endFlag: "",
+        intentionalEnd: false,
       };
       nodes.push(node);
       nodeById[id] = node;
@@ -120,26 +131,41 @@
       else { n.title = n.ref || n.type; warn(`Step "${n.id}": unbekannter type "${n.type}".`); }
     }
 
-    /* ---------- Kapitel-Übersicht + Eintritts-Gate ---------- */
+    /* ---------- Kapitel-Übersicht + Eintritts-Bedingungen ---------- */
+    // entry_conditions = UND-Liste "flag=value; flag2=value2". Leer = Startkapitel.
+    // Rückwärtskompatibel: fehlt entry_conditions, wird das alte Paar
+    // entry_flag/entry_value als EINE Bedingung gelesen (Alt-Schema).
     const chapters = [];
+    let chapIdx = 0;
     for (const ch in stepsByChapter) {
       const steps = stepsByChapter[ch];
       const entry = steps[0];                       // kleinster order = Eintritt
       const meta = metaById[ch] || {};
-      const entryFlag = norm(meta.entry_flag), entryVal = norm(meta.entry_value);
+      let conds = parseConditions(meta.entry_conditions);
+      if (!conds.length && norm(meta.entry_flag))
+        conds = [{ flag: norm(meta.entry_flag), value: norm(meta.entry_value) }];
+      const route = norm(meta.route);
       if (entry) {
         entry.isEntry = true;
-        if (entryFlag) entry.entryGate = { flag: entryFlag, value: entryVal };
+        entry.entryConditions = conds;
+        if (conds.length) entry.entryGate = conds[0];   // Kompat.: 1. Bedingung
+        // Eintritts-Bedingungen als "liest" am Eintritts-Step anzeigen
+        for (const cond of conds) entry.readsFlags.push({ flag: cond.flag, value: cond.value, as: "chapter-entry" });
       }
       chapters.push({
         id: ch,
         title: norm(meta.title) || ch,
-        entry_flag: entryFlag,
-        entry_value: entryVal,
+        route,
+        _idx: chapIdx++,
+        entryConditions: conds,
+        isStart: !conds.length,
         entryStep: entry ? entry.id : null,
         steps: steps.map(s => s.id),
       });
     }
+    // Optionale Gruppierung nach route: gleiche route-Kapitel werden gestapelt
+    // (Lanes), Reihenfolge innerhalb einer route bleibt stabil.
+    chapters.sort((a, b) => (a.route || "").localeCompare(b.route || "") || a._idx - b._idx);
 
     /* ---------- Ablauf-Kanten (intra-chapter) ---------- */
     const edges = [];
@@ -218,9 +244,16 @@
       for (const f of parseSetFlags(ev.effects))
         for (const host of hosts) addWrite(f.flag, f.value, host, `combat_event ${id}`);
     }
-    // (4) end-Step -> chapter_xx_completed
-    for (const n of nodes) if (n.type === "end")
-      addWrite(`${n.chapter}_completed`, "true", n.id, `end-step ${n.id}`);
+    // (4) end-Step -> gesetztes Flag. ref-Spalte hat VORRANG; ist sie leer,
+    //     Fallback "{chapter_id}_completed". So können zusammenführende
+    //     Sub-Branches absichtlich DASSELBE Flag setzen (Merge), und Bad-Ends
+    //     ein eigenes (z.B. game_over_aldric_dead).
+    for (const n of nodes) if (n.type === "end") {
+      const flag = n.ref || `${n.chapter}_completed`;
+      n.endFlag = flag;
+      n.intentionalEnd = /^(game_over_|ending_)/i.test(flag);
+      addWrite(flag, "true", n.id, `end-step ${n.id}`);
+    }
 
     /* ---------- Flag-Lesevorgänge sammeln ---------- */
     const reads = []; // {flag, value, nodeId, as, matchValue}
@@ -230,9 +263,8 @@
       const n = nodeById[nodeId];
       if (n) n.readsFlags.push({ flag, value, as });
     };
-    // chapters_meta.entry_flag -> Eintritts-Step (wertgenau)
-    for (const c of chapters) if (c.entry_flag && c.entryStep)
-      addRead(c.entry_flag, c.entry_value, c.entryStep, "chapter-entry", true);
+    // (Kapitel-Eintritt wird NICHT mehr als generische Flag-Brücke behandelt –
+    //  die Verkettung Ende→Anfang erfolgt unten gezielt über "chapter"-Kanten.)
     // chapters.branch_flag -> branch-Step (wertUNabhängig: jede Änderung ist relevant)
     for (const n of nodes) if (n.branch && n.branch.flag)
       addRead(n.branch.flag, n.branch.value, n.id, "branch", false);
@@ -268,63 +300,114 @@
       }
     }
 
+    /* ---------- ÄNDERUNG 2: Kapitel-Verkettung (Ende → nächster Anfang) ---------- */
+    // Producible-Flags je Name (aus ALLEN Quellen). End-Step-Writer sind die
+    // "Completion-Flags" – nur sie verketten Kapitel; die übrigen Bedingungen
+    // (Diskriminatoren wie route/Pfadwahl) werden zum Kanten-Label.
+    const writesByFlag = {};
+    for (const w of writes) (writesByFlag[w.flag] = writesByFlag[w.flag] || []).push(w);
+    const isEndWriter = (w) => nodeById[w.nodeId] && nodeById[w.nodeId].type === "end";
+
+    // Welche Flags werden von IRGENDEINER entry_conditions konsumiert?
+    const consumedByEntry = new Set();
+    for (const c of chapters) for (const cond of c.entryConditions) consumedByEntry.add(cond.flag);
+
+    const bridgedFlags = new Set();
+    const issues = [];                                // gefüllt hier + Sackgassen unten
+
+    for (const c of chapters) {
+      const conds = c.entryConditions;
+      if (!conds.length || !c.entryStep) continue;    // Startkapitel / ohne Steps
+      const condInfo = conds.map(cond => {
+        const all = writesByFlag[cond.flag] || [];
+        const valMatch = all.filter(w => cond.value === "" || w.value === cond.value);
+        return { cond, valMatch, endWriters: valMatch.filter(isEndWriter), produced: all.length > 0 };
+      });
+
+      // ÄNDERUNG 3a: Unerreichbar, wenn ein benötigtes Flag (UND-Logik) von
+      // KEINEM Kapitel produziert wird.
+      const missing = condInfo.filter(ci => !ci.produced).map(ci => ci.cond.flag);
+      if (missing.length) {
+        const d = { severity: "unreachable", node: c.entryStep,
+          message: `Kapitel "${c.id}" ist unerreichbar: Flag(s) ${missing.join(", ")} aus entry_conditions werden von keinem Kapitel produziert.` };
+        nodeById[c.entryStep].diagnostics.push(d); issues.push(d);
+      }
+
+      // Link-Bedingungen = Bedingungen, deren Flag ein end-Step setzt.
+      const linkConds = condInfo.filter(ci => ci.endWriters.length);
+      // Diskriminatoren = alle übrigen Bedingungen → Kanten-Label.
+      const discrim = conds
+        .filter(cond => !linkConds.some(lc => lc.cond === cond))
+        .map(cond => `${cond.flag}=${cond.value}`).join("; ");
+
+      if (linkConds.length) {
+        // Kante vom end-Step jedes Vorgängers zum ersten Step von B.
+        for (const lc of linkConds) {
+          bridgedFlags.add(lc.cond.flag);
+          for (const w of lc.endWriters) {
+            if (w.nodeId === c.entryStep) continue;
+            addEdge({ from: w.nodeId, to: c.entryStep, kind: "chapter", scope: "inter",
+              label: discrim,
+              reason: `Kapitel "${nodeById[w.nodeId].chapter}" endet (setzt ${lc.cond.flag}=${lc.cond.value}) → Eintritt "${c.id}"` +
+                      (discrim ? ` unter Bedingung ${discrim}` : " (Merge)") });
+          }
+        }
+      } else {
+        // Kein Completion-Flag eines end-Steps in den Bedingungen (z.B. reines
+        // Discriminator-Gate / Alt-Schema): Flag-Brücke vom produzierenden Step.
+        for (const ci of condInfo) {
+          bridgedFlags.add(ci.cond.flag);
+          for (const w of ci.valMatch) {
+            if (w.nodeId === c.entryStep) continue;
+            const sameChapter = nodeById[w.nodeId].chapter === c.id;
+            addEdge({ from: w.nodeId, to: c.entryStep, kind: "flag",
+              scope: sameChapter ? "intra" : "inter",
+              label: `${ci.cond.flag}=${ci.cond.value}`,
+              reason: `${w.via} setzt ${ci.cond.flag}=${ci.cond.value} → Eintritt "${c.id}"` });
+          }
+        }
+      }
+    }
+
     /* ---------- Flag-Register (Übersicht / unverbrauchte Flags) ---------- */
     const flags = {};
     const ensureFlag = (f) => (flags[f] = flags[f] || { writes: [], reads: [], bridged: false });
     for (const w of writes) ensureFlag(w.flag).writes.push({ node: w.nodeId, value: w.value, via: w.via });
     for (const r of reads)  ensureFlag(r.flag).reads.push({ node: r.nodeId, value: r.value, as: r.as });
+    // Eintritts-Bedingungen zählen als Lesevorgang (Konsum) des Flags.
+    for (const c of chapters) for (const cond of c.entryConditions)
+      ensureFlag(cond.flag).reads.push({ node: c.entryStep, value: cond.value, as: "chapter-entry" });
     for (const e of edges) if (e.kind === "flag") {
       const f = e.label.split("=")[0];
       if (flags[f]) flags[f].bridged = true;
     }
+    for (const f of bridgedFlags) if (flags[f]) flags[f].bridged = true;
     for (const f in flags) {
       const fr = flags[f];
-      if (fr.writes.length && !fr.reads.length) warn(`Flag "${f}" wird geschrieben, aber nirgends gelesen.`);
+      // Gewollte Ende-Flags (game_over_/ending_) sind absichtlich Terminals –
+      // kein Lesevorgang erwartet, daher keine "nirgends gelesen"-Warnung.
+      const intentional = /^(game_over_|ending_)/i.test(f);
+      if (fr.writes.length && !fr.reads.length && !intentional) warn(`Flag "${f}" wird geschrieben, aber nirgends gelesen.`);
       if (fr.reads.length && !fr.writes.length) warn(`Flag "${f}" wird gelesen, aber nirgends geschrieben.`);
     }
 
-    /* ---------- Sackgassen-Diagnose (Skalierungs-Hilfe) ---------- */
-    // Ziel: vergessene Flag-Verknüpfungen sichtbar machen, bevor das Sheet
-    // groß wird. Vorwärts-Erreichbarkeit über ALLE Kanten (inkl. Flag-Brücken),
-    // dann zwei Klassen:
-    //   • dead-end (rot):  Nicht-end-Step, der vorwärts KEIN anderes Kapitel
-    //     erreicht, obwohl sein Kapitel eine ausgehende Flag-Brücke HAT.
-    //     -> ein Pfad versickert, während Schwesterpfade weiterführen.
-    //   • terminal-chapter (orange): end-Step eines Kapitels OHNE ausgehende
-    //     Brücke -> vermutlich gewolltes Ende, aber zur Kontrolle markiert.
-    const adj = {};
-    for (const n of nodes) adj[n.id] = [];
-    for (const e of edges) if (adj[e.from]) adj[e.from].push(e.to);
-    const reachableChapters = (startId) => {
-      const seen = new Set([startId]); const stack = [startId]; const chaps = new Set();
-      while (stack.length) {
-        const id = stack.pop();
-        for (const to of adj[id] || []) if (!seen.has(to)) {
-          seen.add(to); stack.push(to);
-          if (nodeById[to]) chaps.add(nodeById[to].chapter);
-        }
-      }
-      return chaps;                                   // Kapitel der NACHFOLGER
-    };
-    const chapterHasOutBridge = {};
-    for (const e of edges) if (e.kind === "flag" && e.scope === "inter") {
-      const fromCh = nodeById[e.from] && nodeById[e.from].chapter;
-      const toCh = nodeById[e.to] && nodeById[e.to].chapter;
-      if (fromCh && fromCh !== toCh) chapterHasOutBridge[fromCh] = true;
-    }
-    const issues = [];
+    /* ---------- ÄNDERUNG 3b: Sackgassen & gewollte Enden ---------- */
+    // Pro end-Step das gesetzte Flag (n.endFlag, s. ÄNDERUNG 1) klassifizieren:
+    //   • intentional-end (neutral): Flag wie ein Ende benannt
+    //     (Präfix game_over_ / ending_) → gewollter Terminal-Knoten.
+    //   • dead-end (rot): Flag wird von KEINER entry_conditions konsumiert UND
+    //     ist kein gewolltes Ende → echte Sackgasse (vergessene Verknüpfung).
+    //   • sonst: Connector-Ende (Completion-Flag eines Folgekapitels) → ok.
     for (const n of nodes) {
-      n.diagnostics = [];
-      const chaps = reachableChapters(n.id);
-      n.reachesOtherChapter = [...chaps].some(c => c !== n.chapter);
-      if (n.type !== "end" && !n.reachesOtherChapter && chapterHasOutBridge[n.chapter]) {
-        const d = { severity: "dead-end", node: n.id,
-          message: `"${n.id}" (${n.type}) führt nur zum Kapitelende, ohne den Story-Fortlauf zu erreichen. ` +
-                   `Andere Pfade in ${n.chapter} verzweigen über eine Flag-Brücke weiter — hier fehlt evtl. eine Flag-Verknüpfung.` };
+      if (n.type !== "end") continue;
+      const F = n.endFlag;
+      if (n.intentionalEnd) {
+        const d = { severity: "intentional-end", node: n.id,
+          message: `Gewolltes Ende: "${n.id}" setzt "${F}" (intentionaler Terminal-Knoten).` };
         n.diagnostics.push(d); issues.push(d);
-      } else if (n.type === "end" && !chapterHasOutBridge[n.chapter]) {
-        const d = { severity: "terminal-chapter", node: n.id,
-          message: `Kapitel ${n.chapter} hat keine ausgehende Flag-Brücke — Story-Endpunkt (oder fehlende Folge-Verknüpfung zu einem weiteren Kapitel).` };
+      } else if (!consumedByEntry.has(F)) {
+        const d = { severity: "dead-end", node: n.id,
+          message: `Sackgasse: "${n.id}" setzt "${F}", aber kein Kapitel liest dieses Flag in entry_conditions — und es ist kein gewolltes Ende (game_over_/ending_).` };
         n.diagnostics.push(d); issues.push(d);
       }
     }
@@ -370,11 +453,22 @@
     return { nodes, edges, chapters, flags, drilldown, warnings, issues,
              counts: { nodes: nodes.length, edges: edges.length,
                        flagEdges: edges.filter(e => e.kind === "flag").length,
+                       chapterEdges: edges.filter(e => e.kind === "chapter").length,
                        deadEnds: issues.filter(i => i.severity === "dead-end").length,
-                       terminalChapters: issues.filter(i => i.severity === "terminal-chapter").length } };
+                       unreachable: issues.filter(i => i.severity === "unreachable").length,
+                       intentionalEnds: issues.filter(i => i.severity === "intentional-end").length } };
   }
 
   /* ---------- kleine Helfer ---------- */
+  // "flag=value; flag2=value2" -> [{flag, value}, ...] (UND-Liste). Ein Eintrag
+  // ohne '=' wird als {flag, value:""} gelesen (wertunabhängige Bedingung).
+  function parseConditions(s) {
+    return norm(s).split(";").map(x => x.trim()).filter(Boolean).map(part => {
+      const i = part.indexOf("=");
+      return i === -1 ? { flag: part.trim(), value: "" }
+                      : { flag: part.slice(0, i).trim(), value: part.slice(i + 1).trim() };
+    });
+  }
   function index(arr, key) { const m = {}; for (const r of arr) { const k = norm(r[key]); if (k) m[k] = r; } return m; }
   function groupBy(arr, key) { const m = {}; for (const r of arr) { const k = norm(r[key]); if (!k) continue; (m[k] = m[k] || []).push(r); } return m; }
 
