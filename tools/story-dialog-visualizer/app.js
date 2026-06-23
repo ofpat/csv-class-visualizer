@@ -144,17 +144,20 @@
   }
 
   /* ============================================================
-     Layout: horizontal (L→R). Spalte = Fluss-Tiefe (longest path über
-     Struktur-Kanten), Lane = vertikale Position (Branches fächern auf).
-     Kapitel werden als gestapelte Bänder angeordnet; Flag-Kanten
-     überbrücken die Bänder.
+     Layout: geschichtet horizontal (links → rechts), FIX 2.
+       • SPALTE eines Kapitels = seine Tiefe im Kapitel-Link-DAG
+         (längster Pfad vom Startkapitel über die "chapter"-Kanten).
+       • ZEILE/Spur eines Kapitels = seine route; mehrere Kapitel gleicher
+         route & Tiefe (Sub-Branches) fächern in Unterzeilen auf. Trunk-
+         Kapitel (route leer) liegen in der obersten Spur.
+       • Steps INNERHALB eines Kapitels bleiben links→rechts (Fluss-Tiefe).
+       • Kapitel-Kanten werden als kurze horizontale Verbinder gezeichnet
+         (rechte Kante Spalte N → linke Kante Spalte N+1).
      ============================================================ */
   function computeLayout(g) {
-    // Struktur-Kanten = Ablauf/Branch INNERHALB eines Kapitels. Flag-Brücken
-    // UND Kapitel-Verkettungen überspannen Bänder und zählen nicht zur Tiefe.
+    /* ---- Fluss-Tiefe der Steps INNERHALB eines Kapitels (longest path) ---- */
+    // Struktur-Kanten = Ablauf/Branch im Kapitel; Flag/Chapter zählen nicht.
     const struct = g.edges.filter(e => e.kind !== "flag" && e.kind !== "chapter");
-
-    // Tiefe (Spalte) via Längster-Pfad-Relaxation
     const depth = {};
     for (const n of g.nodes) depth[n.id] = 0;
     for (let i = 0; i < g.nodes.length; i++) {
@@ -162,13 +165,12 @@
       for (const e of struct) if (depth[e.to] < depth[e.from] + 1) { depth[e.to] = depth[e.from] + 1; changed = true; }
       if (!changed) break;
     }
-
-    // Lane-Hinweis: Branch true → nach oben, false → nach unten; sonst erben.
+    // Step-Lane: Branch true → oben, false → unten; sonst erben.
     const lane = {};
     const entries = new Set(g.chapters.map(c => c.entryStep));
     for (const n of g.nodes) if (entries.has(n.id)) lane[n.id] = 0;
-    const maxDepth = Math.max(0, ...Object.values(depth));
-    for (let d = 0; d <= maxDepth; d++) {
+    const maxStepDepth = Math.max(0, ...Object.values(depth));
+    for (let d = 0; d <= maxStepDepth; d++) {
       for (const e of struct) {
         if (depth[e.from] !== d) continue;
         const base = lane[e.from] || 0;
@@ -179,43 +181,106 @@
       }
     }
 
-    // x je Spalte (kapitelübergreifend ausgerichtet)
-    const colX = (d) => PADDING + d * (CARD_W + H_GAP_X);
+    /* ---- Kapitel-Link-DAG: Spalte = Tiefe über die "chapter"-Kanten ---- */
+    const chapterOf = (stepId) => g._byId[stepId] && g._byId[stepId].chapter;
+    const chEdges = g.edges.filter(e => e.kind === "chapter")
+      .map(e => ({ from: chapterOf(e.from), to: chapterOf(e.to) }))
+      .filter(e => e.from && e.to && e.from !== e.to);
+    const cdepth = {};
+    for (const c of g.chapters) cdepth[c.id] = 0;
+    for (let i = 0; i < g.chapters.length; i++) {
+      let changed = false;
+      for (const e of chEdges) if (cdepth[e.to] < cdepth[e.from] + 1) { cdepth[e.to] = cdepth[e.from] + 1; changed = true; }
+      if (!changed) break;
+    }
 
-    // Bänder je Kapitel vertikal stapeln
-    let bandTop = PADDING;
-    let totalW = 0;
+    /* ---- Spuren (Zeilen): route-Gruppen, Sub-Branches als Unterzeilen ---- */
+    // route-Reihenfolge: Trunk ("") oben, dann nach erstem Auftreten.
+    const routeOrder = [];
+    for (const c of g.chapters) { const r = c.route || ""; if (!routeOrder.includes(r)) routeOrder.push(r); }
+    routeOrder.sort((a, b) => (a === "" ? -1 : b === "" ? 1 : 0));
+    const subRow = {};          // chapterId → Unterzeile innerhalb seiner route
+    const routeRows = {};       // route → Anzahl Unterzeilen
+    for (const r of routeOrder) {
+      const chs = g.chapters.filter(c => (c.route || "") === r)
+        .sort((a, b) => cdepth[a.id] - cdepth[b.id] || a._idx - b._idx);
+      const usedByDepth = {};   // gleiche Tiefe in einer route ⇒ fächern auf
+      let maxRow = 0;
+      for (const c of chs) {
+        const d = cdepth[c.id];
+        const row = usedByDepth[d] || 0;
+        subRow[c.id] = row; usedByDepth[d] = row + 1;
+        maxRow = Math.max(maxRow, row);
+      }
+      routeRows[r] = maxRow + 1;
+    }
+    const rowBase = {}; let accRows = 0;
+    for (const r of routeOrder) { rowBase[r] = accRows; accRows += routeRows[r]; }
+    const chapterRow = {};
+    for (const c of g.chapters) chapterRow[c.id] = rowBase[c.route || ""] + subRow[c.id];
+    const rowCount = accRows;
+
+    /* ---- Geometrie je Kapitel (Breite/Höhe aus seinen Steps) ---- */
+    const chMeta = {};
     for (const c of g.chapters) {
       const chNodes = c.steps.map(id => g._byId[id]).filter(Boolean);
       const cols = {};
       for (const n of chNodes) (cols[depth[n.id]] = cols[depth[n.id]] || []).push(n);
       const colKeys = Object.keys(cols).map(Number).sort((a, b) => a - b);
-
+      const minSD = colKeys.length ? colKeys[0] : 0;
+      const span = colKeys.length ? colKeys[colKeys.length - 1] - minSD : 0;
+      const bandW = (span + 1) * CARD_W + span * H_GAP_X;
       let bandH = 0;
       for (const d of colKeys) {
         const k = cols[d].length;
         const h = cols[d].reduce((s, n) => s + n.h, 0) + (k - 1) * V_GAP;
         bandH = Math.max(bandH, h);
       }
-      for (const d of colKeys) {
-        const colNodes = cols[d].slice().sort((a, b) => (lane[a.id] - lane[b.id]) || a.order - b.order);
+      chMeta[c.id] = { cols, colKeys, bandW, bandH: Math.max(bandH, 1), minSD };
+    }
+
+    /* ---- Spalten-x (max. Kapitelbreite je Tiefe) & Zeilen-y (max. Höhe) ---- */
+    const maxCDepth = Math.max(0, ...g.chapters.map(c => cdepth[c.id]));
+    const colW = {};
+    for (let d = 0; d <= maxCDepth; d++) colW[d] = 0;
+    for (const c of g.chapters) colW[cdepth[c.id]] = Math.max(colW[cdepth[c.id]], chMeta[c.id].bandW);
+    const colXStart = {};
+    let cx = PADDING;
+    for (let d = 0; d <= maxCDepth; d++) { colXStart[d] = cx; cx += colW[d] + H_GAP_X * 2; }
+
+    const rowH = {};
+    for (let r = 0; r < rowCount; r++) rowH[r] = 0;
+    for (const c of g.chapters) rowH[chapterRow[c.id]] = Math.max(rowH[chapterRow[c.id]], chMeta[c.id].bandH);
+    const rowYStart = {};
+    let cy = PADDING;
+    for (let r = 0; r < rowCount; r++) { rowYStart[r] = cy; cy += rowH[r] + BAND_GAP; }
+
+    /* ---- Steps platzieren ---- */
+    let totalW = 0;
+    for (const c of g.chapters) {
+      const m = chMeta[c.id];
+      const cxs = colXStart[cdepth[c.id]];
+      const rys = rowYStart[chapterRow[c.id]];
+      const bandH = rowH[chapterRow[c.id]];
+      for (const d of m.colKeys) {
+        const colNodes = m.cols[d].slice().sort((a, b) => (lane[a.id] - lane[b.id]) || a.order - b.order);
         const k = colNodes.length;
         const colH = colNodes.reduce((s, n) => s + n.h, 0) + (k - 1) * V_GAP;
-        let y = bandTop + (bandH - colH) / 2;
+        const x = cxs + (d - m.minSD) * (CARD_W + H_GAP_X);
+        let y = rys + (bandH - colH) / 2;
         for (const n of colNodes) {
-          n.x = colX(d); n.y = y;
-          n.el.style.left = n.x + "px";
-          n.el.style.top = n.y + "px";
+          n.x = x; n.y = y;
+          n.el.style.left = x + "px";
+          n.el.style.top = y + "px";
           y += n.h + V_GAP;
+          totalW = Math.max(totalW, x + CARD_W);
         }
-        totalW = Math.max(totalW, colX(d) + CARD_W);
       }
-      c._bandTop = bandTop; c._bandH = bandH;
-      bandTop += bandH + BAND_GAP;
+      c._bandTop = rys; c._bandH = bandH;
     }
 
     const totalWidth = totalW + PADDING;
-    const totalHeight = bandTop - BAND_GAP + PADDING;
+    const totalHeight = cy - BAND_GAP + PADDING;
     el.edges.setAttribute("width", totalWidth);
     el.edges.setAttribute("height", totalHeight);
     for (const node of [el.edges, el.canvas, el.labels])
@@ -305,23 +370,13 @@
       const a = g._byId[e.from], b = g._byId[e.to];
       if (!a || !b) continue;
       const path = document.createElementNS(SVGNS, "path");
-      // Flag-Brücken UND Kapitel-Verkettungen werden als vertikale Bögen
-      // zwischen den Bändern gezeichnet; Ablauf/Branch horizontal.
-      const isBridge = e.kind === "flag" || e.kind === "chapter";
-      let d;
-      if (isBridge) {
-        // Brücke: von Unterkante Quelle zu Oberkante Ziel, weit gebogen.
-        const sx = a.x + CARD_W / 2, sy = a.y + a.h;
-        const ex = b.x + CARD_W / 2, ey = b.y;
-        const dy = Math.max(50, Math.abs(ey - sy) / 2);
-        d = `M ${sx} ${sy} C ${sx} ${sy + dy}, ${ex} ${ey - dy}, ${ex} ${ey}`;
-      } else {
-        // Ablauf/Branch: L→R, horizontale Tangenten.
-        const sx = a.x + CARD_W, sy = a.y + a.h / 2;
-        const ex = b.x, ey = b.y + b.h / 2;
-        const dx = Math.max(30, (ex - sx) / 2);
-        d = `M ${sx} ${sy} C ${sx + dx} ${sy}, ${ex - dx} ${ey}, ${ex} ${ey}`;
-      }
+      // FIX 2: ALLE Kanten links→rechts. Ablauf/Branch verbinden Steps eines
+      // Kapitels; Kapitel-Kanten verbinden rechte Kante Spalte N → linke Kante
+      // Spalte N+1 → kurze horizontale Verbinder (keine langen vertikalen Bögen).
+      const sx = a.x + CARD_W, sy = a.y + a.h / 2;
+      const ex = b.x, ey = b.y + b.h / 2;
+      const dx = Math.max(30, (ex - sx) / 2);
+      const d = `M ${sx} ${sy} C ${sx + dx} ${sy}, ${ex - dx} ${ey}, ${ex} ${ey}`;
       path.setAttribute("d", d);
       path.setAttribute("class", "edge edge-" + e.kind + (e.scope ? " scope-" + e.scope : ""));
       el.edges.appendChild(path);
@@ -333,9 +388,9 @@
         labelEl = document.createElement("div");
         labelEl.className = "edge-label" + (e.kind === "flag" ? " flag" : e.kind === "chapter" ? " chapter" : " branch");
         labelEl.textContent = labelText;
-        // grob am Pfad-Mittelpunkt
-        const mx = isBridge ? (a.x + CARD_W / 2 + b.x + CARD_W / 2) / 2 : (a.x + CARD_W + b.x) / 2;
-        const my = isBridge ? (a.y + a.h + b.y) / 2 : (a.y + a.h / 2 + b.y + b.h / 2) / 2;
+        // grob am Pfad-Mittelpunkt (zwischen rechter Quell- und linker Zielkante)
+        const mx = (a.x + CARD_W + b.x) / 2;
+        const my = (a.y + a.h / 2 + b.y + b.h / 2) / 2;
         labelEl.style.left = mx + "px";
         labelEl.style.top = my + "px";
         el.labels.appendChild(labelEl);

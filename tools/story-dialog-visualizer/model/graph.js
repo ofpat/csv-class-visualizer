@@ -320,8 +320,11 @@
       if (!conds.length || !c.entryStep) continue;    // Startkapitel / ohne Steps
       const condInfo = conds.map(cond => {
         const all = writesByFlag[cond.flag] || [];
-        const valMatch = all.filter(w => cond.value === "" || w.value === cond.value);
-        return { cond, valMatch, endWriters: valMatch.filter(isEndWriter), produced: all.length > 0 };
+        // endAll  = end-Steps, die EXAKT dieses Flag (String-gleich) setzen.
+        // endMatch = davon zusätzlich wertgleich (Completion-Flag-Treffer).
+        const endAll = all.filter(isEndWriter);
+        const endMatch = endAll.filter(w => cond.value === "" || w.value === cond.value);
+        return { cond, endAll, endMatch, produced: all.length > 0 };
       });
 
       // ÄNDERUNG 3a: Unerreichbar, wenn ein benötigtes Flag (UND-Logik) von
@@ -333,9 +336,19 @@
         nodeById[c.entryStep].diagnostics.push(d); issues.push(d);
       }
 
-      // Link-Bedingungen = Bedingungen, deren Flag ein end-Step setzt.
-      const linkConds = condInfo.filter(ci => ci.endWriters.length);
-      // Diskriminatoren = alle übrigen Bedingungen → Kanten-Label.
+      // FIX 1: Verkettung NUR über Completion-Flags (= von einem end-Step gesetzt)
+      // und nur bei EXAKTER Flag- UND Wert-Gleichheit. Setzt ein end-Step das
+      // Flag mit ABWEICHENDEM Wert, wird gewarnt und KEINE Kante gezogen
+      // (kein stilles Ausweichen auf einen anderen Schreiber).
+      for (const ci of condInfo) {
+        if (!ci.endMatch.length && ci.endAll.length) {
+          warn(`Kapitel "${c.id}": entry_condition ${ci.cond.flag}=${ci.cond.value} – ein end-Step setzt "${ci.cond.flag}", aber mit abweichendem Wert (${ci.endAll.map(w => w.value).join("/")}); KEINE Kapitel-Kante (Wert-Mismatch).`);
+        }
+      }
+
+      // Link-Bedingungen = Bedingungen, deren Flag ein end-Step exakt+wertgleich setzt.
+      const linkConds = condInfo.filter(ci => ci.endMatch.length);
+      // Diskriminatoren = alle übrigen Bedingungen → NUR Kanten-Label, NIE Quelle.
       const discrim = conds
         .filter(cond => !linkConds.some(lc => lc.cond === cond))
         .map(cond => `${cond.flag}=${cond.value}`).join("; ");
@@ -344,7 +357,7 @@
         // Kante vom end-Step jedes Vorgängers zum ersten Step von B.
         for (const lc of linkConds) {
           bridgedFlags.add(lc.cond.flag);
-          for (const w of lc.endWriters) {
+          for (const w of lc.endMatch) {
             if (w.nodeId === c.entryStep) continue;
             addEdge({ from: w.nodeId, to: c.entryStep, kind: "chapter", scope: "inter",
               label: discrim,
@@ -352,20 +365,11 @@
                       (discrim ? ` unter Bedingung ${discrim}` : " (Merge)") });
           }
         }
-      } else {
-        // Kein Completion-Flag eines end-Steps in den Bedingungen (z.B. reines
-        // Discriminator-Gate / Alt-Schema): Flag-Brücke vom produzierenden Step.
-        for (const ci of condInfo) {
-          bridgedFlags.add(ci.cond.flag);
-          for (const w of ci.valMatch) {
-            if (w.nodeId === c.entryStep) continue;
-            const sameChapter = nodeById[w.nodeId].chapter === c.id;
-            addEdge({ from: w.nodeId, to: c.entryStep, kind: "flag",
-              scope: sameChapter ? "intra" : "inter",
-              label: `${ci.cond.flag}=${ci.cond.value}`,
-              reason: `${w.via} setzt ${ci.cond.flag}=${ci.cond.value} → Eintritt "${c.id}"` });
-          }
-        }
+      } else if (!missing.length) {
+        // Bedingungen sind erfüllbar, enthalten aber KEIN Completion-Flag eines
+        // end-Steps (nur Diskriminatoren wie escape_route/desert_path). Diese
+        // dürfen NIE Kantenquelle sein → keine Verkettung, nur Warnung.
+        warn(`Kapitel "${c.id}": entry_conditions enthalten kein Completion-Flag eines end-Steps (${conds.map(x => x.flag).join(", ")}) – keine Kapitel-Verkettung gezeichnet.`);
       }
     }
 
